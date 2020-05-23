@@ -465,6 +465,13 @@ const Dex = new class implements ModdedDex {
 		if (window.BattleAliases && id in BattleAliases) {
 			name = BattleAliases[id];
 			id = toID(name);
+		} else if (window.BattlePokedex && !(id in BattlePokedex) && window.BattleBaseSpeciesChart) {
+			for (const baseSpeciesId of BattleBaseSpeciesChart) {
+				if (formid.startsWith(baseSpeciesId)) {
+					id = baseSpeciesId;
+					break;
+				}
+			}
 		}
 		if (!window.BattlePokedex) window.BattlePokedex = {};
 		let data = window.BattlePokedex[id];
@@ -484,18 +491,23 @@ const Dex = new class implements ModdedDex {
 			window.BattlePokedex[id] = species;
 		}
 
-		if (formid === id || !species.cosmeticFormes || !species.cosmeticFormes.includes(formid)) {
-			return species;
+		if (species.cosmeticFormes) {
+			for (const forme of species.cosmeticFormes) {
+				if (toID(forme) === formid) {
+					species = new Species(formid, name, {
+						...species,
+						name: forme,
+						forme: forme.slice(species.name.length + 1),
+						baseForme: "",
+						baseSpecies: species.name,
+						otherFormes: null,
+					});
+					window.BattlePokedexAltForms[formid] = species;
+					break;
+				}
+			}
 		}
-		let forme = formid.slice(id.length);
-		forme = forme[0].toUpperCase() + forme.slice(1);
-		name = species.baseSpecies + (forme ? '-' + forme : '');
 
-		species = window.BattlePokedexAltForms[formid] = new Species(formid, name, {
-			...species,
-			name,
-			forme,
-		});
 		return species;
 	}
 

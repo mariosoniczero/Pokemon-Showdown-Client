@@ -244,7 +244,7 @@ class BattleScene {
 		this.updateBgm();
 		if (this.battle.resumeButton) {
 			this.$frame.append('<div class="playbutton"><button data-action="resume"><i class="fa fa-play icon-play"></i> Resume</button></div>');
-			this.$frame.find('div.playbutton button').click(this.battle.resumeButton);
+			this.$frame.find<HTMLElement>('div.playbutton button').click(this.battle.resumeButton);
 		}
 	}
 	resume() {
@@ -2606,6 +2606,7 @@ class PokemonSprite extends Sprite {
 			destinybond: '<span class="good">Destiny&nbsp;Bond</span>',
 			snatch: '<span class="good">Snatch</span>',
 			grudge: '<span class="good">Grudge</span>',
+			charge: '<span class="good">Charge</span>',
 			endure: '<span class="good">Endure</span>',
 			focuspunch: '<span class="neutral">Focusing</span>',
 			shelltrap: '<span class="neutral">Trap&nbsp;set</span>',

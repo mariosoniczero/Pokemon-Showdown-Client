@@ -399,14 +399,14 @@ class BattleTooltips {
 	};
 
 	getStatusZMoveEffect(move: Move) {
-		if (move.zMoveEffect in BattleTooltips.zMoveEffects) {
-			return BattleTooltips.zMoveEffects[move.zMoveEffect];
+		if (move.zMove!.effect! in BattleTooltips.zMoveEffects) {
+			return BattleTooltips.zMoveEffects[move.zMove!.effect!];
 		}
 		let boostText = '';
-		if (move.zMoveBoost) {
-			let boosts = Object.keys(move.zMoveBoost) as StatName[];
+		if (move.zMove!.boost) {
+			let boosts = Object.keys(move.zMove!.boost) as StatName[];
 			boostText = boosts.map(stat =>
-				BattleTextParser.stat(stat) + ' +' + move.zMoveBoost![stat]
+				BattleTextParser.stat(stat) + ' +' + move.zMove!.boost![stat]
 			).join(', ');
 		}
 		return boostText;
@@ -480,10 +480,10 @@ class BattleTooltips {
 			} else {
 				let moveName = BattleTooltips.zMoveTable[item.zMoveType as TypeName];
 				const zMove = this.battle.dex.getMove(moveName);
-				let movePower = move.zMovePower;
+				let movePower = move.zMove!.basePower;
 				// the different Hidden Power types don't have a Z power set, fall back on base move
 				if (!movePower && move.id.startsWith('hiddenpower')) {
-					movePower = this.battle.dex.getMove('hiddenpower').zMovePower;
+					movePower = this.battle.dex.getMove('hiddenpower').zMove!.basePower;
 				}
 				move = new Move(zMove.id, zMove.name, {
 					...zMove,
@@ -503,7 +503,7 @@ class BattleTooltips {
 				move = new Move(maxMove.id, maxMove.name, {
 					...maxMove,
 					category: move.category,
-					basePower: move.gmaxPower,
+					basePower: move.maxMove!.basePower,
 				});
 			}
 		}
@@ -792,9 +792,11 @@ class BattleTooltips {
 			for (const row of clientPokemon.moveTrack) {
 				text += `${this.getPPUseText(row)}<br />`;
 			}
-			if (clientPokemon.moveTrack.filter(([moveName]) =>
-				moveName.charAt(0) !== '*' && !this.battle.dex.getMove(moveName).isZ
-			).length > 4) {
+			if (clientPokemon.moveTrack.filter(([moveName]) => {
+				if (moveName.charAt(0) === '*') return false;
+				const move = this.battle.dex.getMove(moveName);
+				return !move.isZ && !move.isMax;
+			}).length > 4) {
 				text += `(More than 4 moves is usually a sign of Illusion Zoroark/Zorua.) `;
 			}
 			if (this.battle.gen === 3) {
@@ -1810,10 +1812,10 @@ class BattleStatGuesser {
 		this.ignoreEVLimits = (
 			this.dex.gen < 3 ||
 			this.formatid.endsWith('hackmons') ||
-			this.formatid === 'gen8metronomebattle' ||
+			this.formatid.includes('metronomebattle') ||
 			this.formatid.endsWith('norestrictions')
 		);
-		this.supportsEVs = !this.formatid.startsWith('gen7letsgo');
+		this.supportsEVs = !this.formatid.includes('letsgo');
 		this.supportsAVs = !this.supportsEVs && this.formatid.endsWith('norestrictions');
 	}
 	guess(set: PokemonSet) {
