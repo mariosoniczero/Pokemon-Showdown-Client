@@ -1111,6 +1111,7 @@
 			var species = Dex.getSpecies(set.species);
 			var isLetsGo = this.curTeam.format.startsWith('gen7letsgo');
 			var isNatDex = this.curTeam.format.includes('nationaldex');
+            var isCustomMega = this.curTeam.format.includes('custommega');
 			var buf = '<li value="' + i + '">';
 			if (!set.species) {
 				if (this.deletedSet) {
@@ -1150,12 +1151,12 @@
 				buf += '<span class="detailcell"><label>Gender</label>' + GenderChart[set.gender || species.gender || 'N'] + '</span>';
 				if (isLetsGo) {
 					buf += '<span class="detailcell"><label>Happiness</label>' + (typeof set.happiness === 'number' ? set.happiness : 70) + '</span>';
-				} else if (this.curTeam.gen < 8 || isNatDex) {
+				} else if (this.curTeam.gen < 8 || isNatDex || isCustomMega) {
 					buf += '<span class="detailcell"><label>Happiness</label>' + (typeof set.happiness === 'number' ? set.happiness : 255) + '</span>';
 				}
 				buf += '<span class="detailcell"><label>Shiny</label>' + (set.shiny ? 'Yes' : 'No') + '</span>';
 				if (!isLetsGo) {
-					if (this.curTeam.gen === 8 && !isNatDex) {
+					if (this.curTeam.gen === 8 && !isNatDex && !isCustomMega) {
 						// Hidden Power isn't in normal Gen 8
 					} else {
 						buf += '<span class="detailcell"><label>HP Type</label>' + (set.hpType || 'Dark') + '</span>';
@@ -2448,6 +2449,7 @@
 			var set = this.curSet;
 			var isLetsGo = this.curTeam.format.startsWith('gen7letsgo');
 			var isNatDex = this.curTeam.gen === 8 && this.curTeam.format.includes('nationaldex');
+            var isCustomMega = this.curTeam.gen === 8 && this.curTeam.format.includes('custommega');
 			var species = Dex.getSpecies(set.species);
 			if (!set) return;
 			buf += '<div class="resultheader"><h3>Details</h3></div>';
@@ -2493,7 +2495,7 @@
 				buf += '</select></div></div>';
 			}
 
-			if (this.curTeam.gen === 7 || isNatDex) {
+			if (this.curTeam.gen === 7 || isNatDex || isCustomMega) {
 				buf += '<div class="formrow"><label class="formlabel" title="Hidden Power Type">Hidden Power:</label><div><select name="hptype">';
 				buf += '<option value=""' + (!set.hpType ? ' selected="selected"' : '') + '>(automatic type)</option>'; // unset
 				for (var type in exports.BattleTypeChart) {

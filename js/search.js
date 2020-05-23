@@ -802,7 +802,8 @@
 			this.mod = 'letsgo';
 		}
 		var isNatDex = format.startsWith('nationaldex');
-		if (isNatDex) {
+        var isCustomMega = format.startsWith('custommega');
+		if (isNatDex || isCustomMega) {
 			format = format.slice(11);
 			this.mod = 'natdex';
 			if (!format) format = 'ou';
@@ -835,7 +836,7 @@
 				table = table['gen' + this.gen];
 			} else if (isLetsGo) {
 				table = table['letsgo'];
-			} else if (isNatDex) {
+			} else if (isNatDex || isCustomMega) {
 				table = table['natdex'];
 			} else if (isMetBattle) {
 				table = table['metronome'];
@@ -906,7 +907,7 @@
 			var table = BattleTeambuilderTable;
 			if (this.gen < 8) {
 				table = table['gen' + this.gen];
-			} else if (isNatDex) {
+			} else if (isNatDex || isCustomMega) {
 				table = table['natdex'];
 			} else if (isMetBattle) {
 				table = table['metronome'];
@@ -996,7 +997,7 @@
 						} else if (learnsetEntry.indexOf(gen) < 0) {
 							continue;
 						}
-						if (this.gen === 8 && BattleMovedex[moveid].isNonstandard === "Past" && !isNatDex) continue;
+						if (this.gen === 8 && BattleMovedex[moveid].isNonstandard === "Past" && !isNatDex && !isCustomMega) continue;
 						if (moves.indexOf(moveid) >= 0) continue;
 						moves.push(moveid);
 						if (moveid === 'sketch') sketch = true;
