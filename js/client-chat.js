@@ -837,7 +837,12 @@
 			case 'rating':
 			case 'ladder':
 				if (app.localLadder) return text;
-				if (!target) target = app.user.get('userid');
+				if (!target) {
+					target = app.user.get('userid');
+				}
+				if (this.battle && !target.includes(',')) {
+					target += ", " + this.id.split('-')[1];
+				}
 
 				var targets = target.split(',');
 				var formatTargeting = false;
@@ -900,7 +905,7 @@
 					}
 					if (hiddenFormats.length) {
 						if (hiddenFormats.length === data.length) {
-							buffer += '<tr class="no-matches"><td colspan="6"><em>This user has not played any ladder games that match the format targeting.</em></td></tr>';
+							buffer += '<tr class="no-matches"><td colspan="8"><em>This user has not played any ladder games that match "' + BattleLog.escapeHTML(Object.keys(gens).concat(Object.keys(formats)).join(', ')) + '".</em></td></tr>';
 						}
 						buffer += '<tr><td colspan="8"><button name="showOtherFormats">' + hiddenFormats.slice(0, 3).join(', ') + (hiddenFormats.length > 3 ? ' and ' + (hiddenFormats.length - 3) + ' other formats' : '') + ' not shown</button></td></tr>';
 					}
@@ -1543,7 +1548,14 @@
 				this.$chat.append('<div class="message"><small>Loading...</small></div>');
 				this.$joinLeave = this.$chat.children().last();
 			}
-			this.joinLeave[action].push(user.group + user.name);
+
+			var formattedUser = user.group + user.name;
+			if (action === 'join' && this.joinLeave['leave'].includes(formattedUser)) {
+				this.joinLeave['leave'].splice(this.joinLeave['leave'].indexOf(formattedUser), 1);
+			} else {
+				this.joinLeave[action].push(formattedUser);
+			}
+
 			var message = '';
 			if (this.joinLeave['join'].length) {
 				message += this.displayJoinLeaves(this.joinLeave['join'], 'joined');

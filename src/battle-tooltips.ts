@@ -263,7 +263,7 @@ class BattleTooltips {
 		 * This is important for the move/switch menus so the tooltip doesn't
 		 * cover up buttons above the hovered button.
 		 */
-		const ownHeight = !!elem.dataset.ownheight;
+		let ownHeight = !!elem.dataset.ownheight;
 
 		let buf: string;
 		switch (type) {
@@ -329,25 +329,43 @@ class BattleTooltips {
 			buf = this.showPokemonTooltip(pokemon, serverPokemon);
 			break;
 		}
+		case 'field': {
+			buf = this.showFieldTooltip();
+			break;
+		}
 		default:
-			throw new Error(`unrecognized type`);
+			// "throws" an error without crashing
+			Promise.resolve(new Error(`unrecognized type`));
+			buf = `<p class="message-error" style="white-space: pre-wrap">${new Error(`unrecognized type`).stack}</p>`;
 		}
 
-		let offset = {
-			left: 150,
-			top: 500,
-		};
-		if (elem) offset = $(elem).offset()!;
-		let x = offset.left - 2;
-		if (elem) {
-			offset = (ownHeight ? $(elem) : $(elem).parent()).offset()!;
-		}
-		let y = offset.top - 5;
+		this.placeTooltip(buf, elem, ownHeight);
+		return true;
+	}
 
-		if (y < 140) y = 140;
-		// if (x > room.leftWidth + 335) x = room.leftWidth + 335;
-		if (x > $(window).width()! - 305) x = Math.max($(window).width()! - 305, 0);
-		if (x < 0) x = 0;
+	placeTooltip(innerHTML: string, hoveredElem?: HTMLElement, notRelativeToParent?: boolean) {
+		let $elem;
+		if (hoveredElem) {
+			$elem = $(hoveredElem);
+		} else {
+			$elem = (this.battle.scene as BattleScene).$turn;
+			notRelativeToParent = true;
+		}
+
+		let hoveredX1 = $elem.offset()!.left;
+
+		if (!notRelativeToParent) {
+			$elem = $elem.parent();
+		}
+
+		let hoveredY1 = $elem.offset()!.top;
+		let hoveredY2 = hoveredY1 + $elem.outerHeight()!;
+
+		// (x, y) are the left and top offsets of #tooltipwrapper, which mark the
+		// BOTTOM LEFT CORNER of the tooltip
+
+		let x = Math.max(hoveredX1 - 2, 0);
+		let y = Math.max(hoveredY1 - 5, 0);
 
 		let $wrapper = $('#tooltipwrapper');
 		if (!$wrapper.length) {
@@ -367,21 +385,38 @@ class BattleTooltips {
 			left: x,
 			top: y,
 		});
-		buf = `<div class="tooltipinner"><div class="tooltip">${buf}</div></div>`;
-		$wrapper.html(buf).appendTo(document.body);
+		innerHTML = `<div class="tooltipinner"><div class="tooltip">${innerHTML}</div></div>`;
+		$wrapper.html(innerHTML).appendTo(document.body);
 		BattleTooltips.elem = $wrapper.find('.tooltip')[0] as HTMLDivElement;
 		BattleTooltips.isLocked = false;
-		if (elem) {
-			let height = $(BattleTooltips.elem).height()!;
-			if (height > y) {
-				y += height + 10;
-				if (ownHeight) y += $(elem).height()!;
-				else y += $(elem).parent().height()!;
-				y = Math.min(y, document.documentElement.clientHeight);
+
+		let height = $(BattleTooltips.elem).outerHeight()!;
+		if (y - height < 1) {
+			// tooltip is too tall to fit above the element:
+			// try to fit it below it instead
+			y = hoveredY2 + height + 5;
+			if (y > document.documentElement.clientHeight) {
+				// tooltip is also too tall to fit below the element:
+				// just place it at the top of the screen
+				y = height + 1;
+			}
+			$wrapper.css('top', y);
+		} else if (y < 75) {
+			// tooltip is pretty high up, put it below the element if it fits
+			y = hoveredY2 + height + 5;
+			if (y < document.documentElement.clientHeight) {
+				// it fits
 				$wrapper.css('top', y);
 			}
 		}
-		BattleTooltips.parentElem = elem;
+
+		let width = $(BattleTooltips.elem).outerWidth()!;
+		if (x > document.documentElement.clientWidth - width - 2) {
+			x = document.documentElement.clientWidth - width - 2;
+			$wrapper.css('left', x);
+		}
+
+		BattleTooltips.parentElem = hoveredElem || null;
 		return true;
 	}
 
@@ -479,18 +514,35 @@ class BattleTooltips {
 				zEffect = this.getStatusZMoveEffect(move);
 			} else {
 				let moveName = BattleTooltips.zMoveTable[item.zMoveType as TypeName];
-				const zMove = this.battle.dex.getMove(moveName);
+				let zMove = this.battle.dex.getMove(moveName);
 				let movePower = move.zMove!.basePower;
 				// the different Hidden Power types don't have a Z power set, fall back on base move
 				if (!movePower && move.id.startsWith('hiddenpower')) {
 					movePower = this.battle.dex.getMove('hiddenpower').zMove!.basePower;
+				}
+				if (move.id === 'weatherball') {
+					switch (this.battle.weather) {
+					case 'sunnyday':
+					case 'desolateland':
+						zMove = this.battle.dex.getMove(BattleTooltips.zMoveTable['Fire']);
+						break;
+					case 'raindance':
+					case 'primordialsea':
+						zMove = this.battle.dex.getMove(BattleTooltips.zMoveTable['Water']);
+						break;
+					case 'sandstorm':
+						zMove = this.battle.dex.getMove(BattleTooltips.zMoveTable['Rock']);
+						break;
+					case 'hail':
+						zMove = this.battle.dex.getMove(BattleTooltips.zMoveTable['Ice']);
+						break;
+					}
 				}
 				move = new Move(zMove.id, zMove.name, {
 					...zMove,
 					category: move.category,
 					basePower: movePower,
 				});
-				// TODO: Weather Ball type-changing shenanigans
 			}
 		} else if (isZOrMax === 'maxmove') {
 			if (move.category === 'Status') {
@@ -498,8 +550,43 @@ class BattleTooltips {
 			} else {
 				// TODO look into if client knows if a pokemon (on its side) can gmax rather than dynamax.
 				// If not, tell client so we can use it for tooltips.
-				const maxMove = gmaxMove ? gmaxMove :
-					this.battle.dex.getMove(BattleTooltips.maxMoveTable[move.type as TypeName]);
+				let maxMove = gmaxMove ? gmaxMove :
+					this.battle.dex.getMove(BattleTooltips.maxMoveTable[move.type]);
+				if (move.id === 'aurawheel' && pokemon.getSpeciesForme() === 'Morpeko-Hangry') {
+					maxMove = this.battle.dex.getMove(BattleTooltips.maxMoveTable['Dark']);
+				}
+				if (move.id === 'weatherball') {
+					const item = this.battle.dex.getItem(pokemon.item);
+					switch (this.battle.weather) {
+					case 'sunnyday':
+					case 'desolateland':
+						if (item.id === 'utilityumbrella') break;
+						maxMove = this.battle.dex.getMove(BattleTooltips.maxMoveTable['Fire']);
+						break;
+					case 'raindance':
+					case 'primordialsea':
+						if (item.id === 'utilityumbrella') break;
+						maxMove = this.battle.dex.getMove(BattleTooltips.maxMoveTable['Water']);
+						break;
+					case 'sandstorm':
+						maxMove = this.battle.dex.getMove(BattleTooltips.maxMoveTable['Rock']);
+						break;
+					case 'hail':
+						maxMove = this.battle.dex.getMove(BattleTooltips.maxMoveTable['Ice']);
+						break;
+					}
+				}
+				if (move.id === 'terrainpulse') {
+					if (this.battle.hasPseudoWeather('Electric Terrain')) {
+						maxMove = this.battle.dex.getMove(BattleTooltips.maxMoveTable['Electric']);
+					} else if (this.battle.hasPseudoWeather('Grassy Terrain')) {
+						maxMove = this.battle.dex.getMove(BattleTooltips.maxMoveTable['Grass']);
+					} else if (this.battle.hasPseudoWeather('Misty Terrain')) {
+						maxMove = this.battle.dex.getMove(BattleTooltips.maxMoveTable['Fairy']);
+					} else if (this.battle.hasPseudoWeather('Psychic Terrain')) {
+						maxMove = this.battle.dex.getMove(BattleTooltips.maxMoveTable['Psychic']);
+					}
+				}
 				move = new Move(maxMove.id, maxMove.name, {
 					...maxMove,
 					category: move.category,
@@ -587,6 +674,10 @@ class BattleTooltips {
 				text += 'Nearly always moves last <em>(priority &minus;' + (-move.priority) + ')</em>.</p><p>';
 			} else if (move.priority === 1) {
 				text += 'Usually moves first <em>(priority +' + move.priority + ')</em>.</p><p>';
+			} else {
+				if (move.id === 'grassyglide' && this.battle.hasPseudoWeather('Grassy Terrrain')) {
+					text += 'Usually moves first <em>(priority +1)</em>.</p><p>';
+				}
 			}
 
 			text += '' + (move.desc || move.shortDesc) + '</p>';
@@ -808,6 +899,27 @@ class BattleTooltips {
 			text += `</p>`;
 		}
 		return text;
+	}
+
+	showFieldTooltip() {
+		const scene = this.battle.scene as BattleScene;
+		let buf = `<table style="border: 0; border-collapse: collapse; vertical-align: top; padding: 0; width: 100%"><tr>`;
+
+		let atLeastOne = false;
+		for (const side of this.battle.sides) {
+			const sideConditions = scene.sideConditionsLeft(side, true);
+			if (sideConditions) atLeastOne = true;
+			buf += `<td><p class="section"><strong>${BattleLog.escapeHTML(side.name)}</strong>${sideConditions || "<br />(no conditions)"}</p></td>`;
+		}
+		buf += `</tr><table>`;
+		if (!atLeastOne) buf = ``;
+
+		let weatherbuf = scene.weatherLeft() || `(no weather)`;
+		if (weatherbuf.startsWith('<br />')) {
+			weatherbuf = weatherbuf.slice(6);
+		}
+		buf = `<p>${weatherbuf}</p>` + buf;
+		return `<p>${buf}</p>`;
 	}
 
 	/**
@@ -1204,15 +1316,26 @@ class BattleTooltips {
 				break;
 			}
 		}
+		if (move.id === 'terrainpulse') {
+			if (this.battle.hasPseudoWeather('Electric Terrain')) {
+				moveType = 'Electric';
+			} else if (this.battle.hasPseudoWeather('Grassy Terrain')) {
+				moveType = 'Grass';
+			} else if (this.battle.hasPseudoWeather('Misty Terrain')) {
+				moveType = 'Fairy';
+			} else if (this.battle.hasPseudoWeather('Psychic Terrain')) {
+				moveType = 'Psychic';
+			}
+		}
 
 		// Aura Wheel as Morpeko-Hangry changes the type to Dark
-		if (move.id === 'aurawheel' && value.pokemon.getSpecies().name === 'Morpeko-Hangry') {
+		if (move.id === 'aurawheel' && value.pokemon.getSpeciesForme() === 'Morpeko-Hangry') {
 			moveType = 'Dark';
 		}
 
 		// Other abilities that change the move type.
 		const noTypeOverride = [
-			'judgment', 'multiattack', 'naturalgift', 'revelationdance', 'struggle', 'technoblast', 'weatherball',
+			'judgment', 'multiattack', 'naturalgift', 'revelationdance', 'struggle', 'technoblast', 'terrainpulse', 'weatherball',
 		];
 		const allowTypeOverride = !noTypeOverride.includes(move.id);
 
@@ -1396,6 +1519,16 @@ class BattleTooltips {
 		if (move.id === 'weatherball') {
 			value.weatherModify(2);
 		}
+		if (move.id === 'terrainpulse') {
+			if (
+				this.battle.hasPseudoWeather('Electric Terrain') ||
+				this.battle.hasPseudoWeather('Grassy Terrain') ||
+				this.battle.hasPseudoWeather('Misty Terrain') ||
+				this.battle.hasPseudoWeather('Psychic Terrain')
+			) {
+				value.modify(2, 'Terrain Pulse boost');
+			}
+		}
 		if (
 			move.id === 'watershuriken' && pokemon.getSpeciesForme() === 'Greninja-Ash' && pokemon.ability === 'Battle Bond'
 		) {
@@ -1515,7 +1648,7 @@ class BattleTooltips {
 			}
 		}
 		const noTypeOverride = [
-			'judgment', 'multiattack', 'naturalgift', 'revelationdance', 'struggle', 'technoblast', 'weatherball',
+			'judgment', 'multiattack', 'naturalgift', 'revelationdance', 'struggle', 'technoblast', 'terrainpulse', 'weatherball',
 		];
 		if (move.category !== 'Status' && !noTypeOverride.includes(move.id)) {
 			if (move.type === 'Normal') {
@@ -1587,6 +1720,28 @@ class BattleTooltips {
 			if (target ? target.isGrounded() : true) {
 				value.modify(0.5, 'Misty Terrain + grounded target');
 			}
+		}
+		if (
+			move.id === 'expandingforce' &&
+			this.battle.hasPseudoWeather('Psychic Terrain') &&
+			pokemon.isGrounded(serverPokemon)
+		) {
+			value.modify(1.5, 'Expanding Force + Psychic Terrain boost');
+		}
+		if (move.id === 'mistyexplosion' && this.battle.hasPseudoWeather('Misty Terrain')) {
+			value.modify(1.5, 'Misty Explosion + Misty Terrain boost');
+		}
+		if (move.id === 'risingvoltage' && this.battle.hasPseudoWeather('Electric Terrain') && target?.isGrounded()) {
+			value.modify(2, 'Rising Voltage + Electric Terrain boost');
+		}
+		if (
+			move.id === 'steelroller' &&
+			!this.battle.hasPseudoWeather('Electric Terrain') &&
+			!this.battle.hasPseudoWeather('Grassy Terrain') &&
+			!this.battle.hasPseudoWeather('Misty Terrain') &&
+			!this.battle.hasPseudoWeather('Psychic Terrain')
+		) {
+			value.set(0, 'no Terrain');
 		}
 
 		// Item
