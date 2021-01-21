@@ -21,107 +21,12 @@
 declare var require: any;
 declare var global: any;
 
-if (!Array.prototype.indexOf) {
-	Array.prototype.indexOf = function indexOf(searchElement, fromIndex) {
-		for (let i = (fromIndex || 0); i < this.length; i++) {
-			if (this[i] === searchElement) return i;
-		}
-		return -1;
-	};
-}
-if (!Array.prototype.includes) {
-	Array.prototype.includes = function includes(thing) {
-		return this.indexOf(thing) !== -1;
-	};
-}
-if (!Array.isArray) {
-	Array.isArray = function isArray(thing): thing is any[] {
-		return Object.prototype.toString.call(thing) === '[object Array]';
-	};
-}
-if (!String.prototype.includes) {
-	String.prototype.includes = function includes(thing) {
-		return this.indexOf(thing) !== -1;
-	};
-}
-if (!String.prototype.startsWith) {
-	String.prototype.startsWith = function startsWith(thing) {
-		return this.slice(0, thing.length) === thing;
-	};
-}
-if (!String.prototype.endsWith) {
-	String.prototype.endsWith = function endsWith(thing) {
-		return this.slice(-thing.length) === thing;
-	};
-}
-if (!String.prototype.trim) {
-	String.prototype.trim = function trim() {
-		return this.replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, '');
-	};
-}
-if (!Object.assign) {
-	Object.assign = function assign(thing: any, rest: any) {
-		for (let i = 1; i < arguments.length; i++) {
-			let source = arguments[i];
-			for (let k in source) {
-				thing[k] = source[k];
-			}
-		}
-		return thing;
-	};
-}
-if (!Object.values) {
-	Object.values = function values(thing: any) {
-		let out: any[] = [];
-		for (let k in thing) {
-			out.push(thing[k]);
-		}
-		return out;
-	};
-}
-if (!Object.keys) {
-	Object.keys = function keys(thing: any) {
-		let out: any[] = [];
-		for (let k in thing) {
-			out.push(k);
-		}
-		return out;
-	};
-}
-if (!Object.entries) {
-	Object.entries = function entries(thing: any) {
-		let out: any[] = [];
-		for (let k in thing) {
-			out.push([k, thing[k]]);
-		}
-		return out;
-	};
-}
-if (!Object.create) {
-	Object.create = function (proto: any) {
-		function F() {}
-		F.prototype = proto;
-		return new (F as any)();
-	};
-}
-
 if (typeof window === 'undefined') {
 	// Node
 	(global as any).window = global;
 } else {
 	// browser (possibly NW.js!)
 	window.exports = window;
-}
-
-if (window.soundManager) {
-	soundManager.setup({url: 'https://play.pokemonshowdown.com/swf/'});
-	if (window.Replays) soundManager.onready(window.Replays.soundReady);
-	soundManager.onready(() => {
-		soundManager.createSound({
-			id: 'notif',
-			url: 'https://play.pokemonshowdown.com/audio/notification.wav',
-		});
-	});
 }
 
 // @ts-ignore
@@ -251,7 +156,7 @@ interface SpriteData {
 	url?: string;
 	rawHTML?: string;
 	pixelated?: boolean;
-	isBackSprite?: boolean;
+	isFrontSprite?: boolean;
 	cryurl?: string;
 	shiny?: boolean;
 }
@@ -277,15 +182,15 @@ const Dex = new class implements ModdedDex {
 	resourcePrefix = (() => {
 		let prefix = '';
 		if (window.document?.location?.protocol !== 'http:') prefix = 'https:';
-		return `${prefix}//play.pokemonshowdown.com/`;
+		return `${prefix}//${window.Config ? Config.routes.client : 'play.pokemonshowdown.com'}/`;
 	})();
 
 	fxPrefix = (() => {
 		if (window.document?.location?.protocol === 'file:') {
-			if (window.Replays) return `https://play.pokemonshowdown.com/fx/`;
+			if (window.Replays) return `https://${window.Config ? Config.routes.client : 'play.pokemonshowdown.com'}/fx/`;
 			return `fx/`;
 		}
-		return `//play.pokemonshowdown.com/fx/`;
+		return `//${window.Config ? Config.routes.client : 'play.pokemonshowdown.com'}/fx/`;
 	})();
 
 	loadedSpriteData = {xy: 1, bw: 0};
@@ -339,9 +244,9 @@ const Dex = new class implements ModdedDex {
 			.slice(0, 50);
 	}
 
-	prefs(prop: string, value?: any, save?: boolean) {
+	prefs(prop: string) {
 		// @ts-ignore
-		return window.Storage?.prefs?.(prop, value, save);
+		return window.Storage?.prefs?.(prop);
 	}
 
 	getShortName(name: string) {
@@ -570,7 +475,7 @@ const Dex = new class implements ModdedDex {
 		el.src = path + 'data/pokedex-mini-bw.js' + qs;
 		document.getElementsByTagName('body')[0].appendChild(el);
 	}
-	getSpriteData(pokemon: Pokemon | Species | string, siden: number, options: {
+	getSpriteData(pokemon: Pokemon | Species | string, isFront: boolean, options: {
 		gen?: number,
 		shiny?: boolean,
 		gender?: GenderName,
@@ -593,6 +498,8 @@ const Dex = new class implements ModdedDex {
 			pokemon = pokemon.getSpeciesForme();
 		}
 		const species = Dex.getSpecies(pokemon);
+		// Gmax sprites are already extremely large, so we don't need to double.
+		if (species.name.endsWith('-Gmax')) isDynamax = false;
 		let spriteData = {
 			gen: mechanicsGen,
 			w: 96,
@@ -600,18 +507,18 @@ const Dex = new class implements ModdedDex {
 			y: 0,
 			url: Dex.resourcePrefix + 'sprites/',
 			pixelated: true,
-			isBackSprite: false,
+			isFrontSprite: false,
 			cryurl: '',
 			shiny: options.shiny,
 		};
 		let name = species.spriteid;
 		let dir;
 		let facing;
-		if (siden) {
+		if (isFront) {
+			spriteData.isFrontSprite = true;
 			dir = '';
 			facing = 'front';
 		} else {
-			spriteData.isBackSprite = true;
 			dir = '-back';
 			facing = 'back';
 		}
@@ -648,27 +555,38 @@ const Dex = new class implements ModdedDex {
 		if (!animationData) animationData = {};
 		if (!miscData) miscData = {};
 
-		if (miscData.num > 0) {
+		if (miscData.num !== 0 && miscData.num > -5000) {
 			let baseSpeciesid = toID(species.baseSpecies);
 			spriteData.cryurl = 'audio/cries/' + baseSpeciesid;
 			let formeid = species.formeid;
 			if (species.isMega || formeid && (
-				formeid === '-sky' ||
-				formeid === '-therian' ||
-				formeid === '-primal' ||
+				formeid === '-crowned' ||
 				formeid === '-eternal' ||
-				baseSpeciesid === 'kyurem' ||
-				baseSpeciesid === 'necrozma' ||
-				formeid === '-super' ||
-				formeid === '-unbound' ||
-				formeid === '-midnight' ||
+				formeid === '-eternamax' ||
+				formeid === '-hangry' ||
+				formeid === '-lowkey' ||
+				formeid === '-noice' ||
+				formeid === '-primal' ||
+				formeid === '-rapidstrike' ||
 				formeid === '-school' ||
+				formeid === '-sky' ||
+				formeid === '-starter' ||
+				formeid === '-super' ||
+				formeid === '-therian' ||
+				formeid === '-unbound' ||
+				baseSpeciesid === 'calyrex' ||
+				baseSpeciesid === 'kyurem' ||
+				baseSpeciesid === 'cramorant' ||
+				baseSpeciesid === 'indeedee' ||
+				baseSpeciesid === 'lycanroc' ||
+				baseSpeciesid === 'necrozma' ||
 				baseSpeciesid === 'oricorio' ||
+				baseSpeciesid === 'slowpoke' ||
 				baseSpeciesid === 'zygarde'
 			)) {
 				spriteData.cryurl += formeid;
 			}
-			spriteData.cryurl += (window.nodewebkit ? '.ogg' : '.mp3');
+			spriteData.cryurl += '.mp3';
 		}
 
 		if (options.shiny && mechanicsGen > 1) dir += '-shiny';
@@ -694,7 +612,7 @@ const Dex = new class implements ModdedDex {
 		// Mod Cries
 		if (options.mod) {
 			spriteData.cryurl = `sprites/${options.mod}/audio/${toID(species.baseSpecies)}`;
-			spriteData.cryurl += (window.nodewebkit ? '.ogg' : '.mp3');
+			spriteData.cryurl += '.mp3';
 		}
 
 		if (animationData[facing + 'f'] && options.gender === 'F') facing += 'f';
@@ -724,7 +642,7 @@ const Dex = new class implements ModdedDex {
 		if (!options.noScale) {
 			if (graphicsGen > 4) {
 				// no scaling
-			} else if (!spriteData.isBackSprite) {
+			} else if (spriteData.isFrontSprite) {
 				spriteData.w *= 2;
 				spriteData.h *= 2;
 				spriteData.y += -16;
@@ -757,7 +675,7 @@ const Dex = new class implements ModdedDex {
 			num = BattlePokedex[id].num;
 		}
 		if (num < 0) num = 0;
-		if (num > 893) num = 0;
+		if (num > 898) num = 0;
 
 		if (window.BattlePokemonIconIndexes?.[id]) {
 			num = BattlePokemonIconIndexes[id];
@@ -803,7 +721,7 @@ const Dex = new class implements ModdedDex {
 		let top = Math.floor(num / 12) * 30;
 		let left = (num % 12) * 40;
 		let fainted = ((pokemon as Pokemon | ServerPokemon)?.fainted ? `;opacity:.3;filter:grayscale(100%) brightness(.5)` : ``);
-		return `background:transparent url(${Dex.resourcePrefix}sprites/pokemonicons-sheet.png?d1) no-repeat scroll -${left}px -${top}px${fainted}`;
+		return `background:transparent url(${Dex.resourcePrefix}sprites/pokemonicons-sheet.png?v4) no-repeat scroll -${left}px -${top}px${fainted}`;
 	}
 
 	getTeambuilderSpriteData(pokemon: any, gen: number = 0): TeambuilderSpriteData {
@@ -869,10 +787,27 @@ const Dex = new class implements ModdedDex {
 		return 'background:transparent url(' + Dex.resourcePrefix + 'sprites/itemicons-sheet.png?g8) no-repeat scroll -' + left + 'px -' + top + 'px';
 	}
 
-	getTypeIcon(type: string, b?: boolean) { // b is just for utilichart.js
-		if (!type) return '';
+	getTypeIcon(type: string | null, b?: boolean) { // b is just for utilichart.js
+		type = this.getType(type).name;
+		if (!type) type = '???';
 		let sanitizedType = type.replace(/\?/g, '%3f');
-		return '<img src="' + Dex.resourcePrefix + 'sprites/types/' + sanitizedType + '.png" alt="' + type + '" height="14" width="32"' + (b ? ' class="b"' : '') + ' />';
+		return `<img src="${Dex.resourcePrefix}sprites/types/${sanitizedType}.png" alt="${type}" height="14" width="32" class="pixelated${b ? ' b' : ''}" />`;
+	}
+
+	getCategoryIcon(category: string | null) {
+		const categoryID = toID(category);
+		let sanitizedCategory = '';
+		switch (categoryID) {
+		case 'physical':
+		case 'special':
+		case 'status':
+			sanitizedCategory = categoryID.charAt(0).toUpperCase() + categoryID.slice(1);
+			break;
+		default:
+			sanitizedCategory = 'undefined';
+			break;
+		}
+		return `<img src="${Dex.resourcePrefix}sprites/categories/${sanitizedCategory}.png" alt="${sanitizedCategory}" height="14" width="32" class="pixelated" />`;
 	}
 
 	getPokeballs() {

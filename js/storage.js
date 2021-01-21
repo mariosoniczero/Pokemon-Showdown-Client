@@ -1,15 +1,3 @@
-Config.origindomain = 'play.pokemonshowdown.com';
-// `defaultserver` specifies the server to use when the domain name in the
-// address bar is `Config.origindomain`.
-Config.defaultserver = {
-	id: 'showdown',
-	host: '18.206.111.10',
-	port: 8000,
-	httpport: 8000,
-	altport: 80,
-	registered: true
-};
-
 function Storage() {}
 
 Storage.initialize = function () {
@@ -64,7 +52,7 @@ Storage.bg = {
 		if (!bgid) {
 			if (location.host === 'smogtours.psim.us') {
 				bgid = 'shaymin';
-			} else if (location.host === 'play.pokemonshowdown.com') {
+			} else if (location.host === Config.routes.client) {
 				bgid = ['horizon', 'ocean', 'waterfall', 'shaymin', 'charizards', 'psday'][Math.floor(Math.random() * 6)];
 			} else {
 				$(document.body).css({
@@ -226,7 +214,7 @@ if (!Storage.bg.id) {
 // localStorage is banned, and since prefs are cached in other
 // places in certain cases.
 
-Storage.origin = 'https://play.pokemonshowdown.com';
+Storage.origin = 'https://' + Config.routes.client;
 
 Storage.prefs = function (prop, value, save) {
 	if (value === undefined) {
@@ -357,9 +345,9 @@ Storage.initPrefs = function () {
 
 	$(window).on('message', Storage.onMessage);
 
-	if (document.location.hostname !== Config.origindomain) {
+	if (document.location.hostname !== Config.routes.client) {
 		$(
-			'<iframe src="https://play.pokemonshowdown.com/crossdomain.php?host=' +
+			'<iframe src="https://' + Config.routes.client + '/crossdomain.php?host=' +
 			encodeURIComponent(document.location.hostname) +
 			'&path=' + encodeURIComponent(document.location.pathname.substr(1)) +
 			'&protocol=' + encodeURIComponent(document.location.protocol) +
@@ -368,7 +356,7 @@ Storage.initPrefs = function () {
 	} else {
 		Config.server = Config.server || Config.defaultserver;
 		$(
-			'<iframe src="https://play.pokemonshowdown.com/crossprotocol.html?v1.2" style="display: none;"></iframe>'
+			'<iframe src="https://' + Config.routes.client + '/crossprotocol.html?v1.2" style="display: none;"></iframe>'
 		).appendTo('body');
 		setTimeout(function () {
 			// HTTPS may be blocked
@@ -397,7 +385,7 @@ Storage.onMessage = function ($e) {
 		Config.server = JSON.parse(data.substr(1));
 		if (Config.server.registered && Config.server.id !== 'showdown' && Config.server.id !== 'smogtours') {
 			var $link = $('<link rel="stylesheet" ' +
-				'href="//play.pokemonshowdown.com/customcss.php?server=' +
+				'href="//' + Config.routes.client + '/customcss.php?server=' +
 				encodeURIComponent(Config.server.id) + '" />');
 			$('head').append($link);
 		}
@@ -432,7 +420,7 @@ Storage.onMessage = function ($e) {
 
 			// in Safari, cross-origin local storage is apparently treated as session
 			// storage, so mirror the storage in the current origin just in case
-			if (document.location.hostname === Config.origindomain) {
+			if (document.location.hostname === Config.routes.client) {
 				try {
 					localStorage.setItem('showdown_teams_local', packedTeams);
 				} catch (e) {}
@@ -647,12 +635,18 @@ Storage.unpackAllTeams = function (buffer) {
 	if (buffer.charAt(0) === '[' && $.trim(buffer).indexOf('\n') < 0) {
 		// old format
 		return JSON.parse(buffer).map(function (oldTeam) {
-			var format = oldTeam.format || 'gen7';
+			var format = oldTeam.format || 'gen8';
+			var capacity = 6;
 			if (format && format.slice(0, 3) !== 'gen') format = 'gen6' + format;
+			if (format && format.endsWith('-box')) {
+				format = format.slice(0, -4);
+				capacity = 24;
+			}
 			return {
 				name: oldTeam.name || '',
 				format: format,
 				team: Storage.packTeam(oldTeam.team),
+				capacity: capacity,
 				folder: '',
 				iconCache: ''
 			};
@@ -667,14 +661,16 @@ Storage.unpackLine = function (line) {
 	if (pipeIndex < 0) return null;
 	var bracketIndex = line.indexOf(']');
 	if (bracketIndex > pipeIndex) bracketIndex = -1;
+	var isBox = line.slice(0, bracketIndex).endsWith('-box');
 	var slashIndex = line.lastIndexOf('/', pipeIndex);
 	if (slashIndex < 0) slashIndex = bracketIndex; // line.slice(slashIndex + 1, pipeIndex) will be ''
-	var format = bracketIndex > 0 ? line.slice(0, bracketIndex) : 'gen7';
+	var format = bracketIndex > 0 ? line.slice(0, isBox ? bracketIndex - 4 : bracketIndex) : 'gen8';
 	if (format && format.slice(0, 3) !== 'gen') format = 'gen6' + format;
 	return {
 		name: line.slice(slashIndex + 1, pipeIndex),
 		format: format,
 		team: line.slice(pipeIndex + 1),
+		capacity: isBox ? 24 : 6,
 		folder: line.slice(bracketIndex + 1, slashIndex > 0 ? slashIndex : bracketIndex + 1),
 		iconCache: ''
 	};
@@ -682,7 +678,7 @@ Storage.unpackLine = function (line) {
 
 Storage.packAllTeams = function (teams) {
 	return teams.map(function (team) {
-		return (team.format ? '' + team.format + ']' : '') + (team.folder ? '' + team.folder + '/' : '') + team.name + '|' + Storage.getPackedTeam(team);
+		return (team.format ? '' + team.format + (team.capacity === 24 ? '-box]' : ']') : '') + (team.folder ? '' + team.folder + '/' : '') + team.name + '|' + Storage.getPackedTeam(team);
 	}).join('\n');
 };
 
@@ -772,9 +768,10 @@ Storage.packTeam = function (team) {
 			buf += '|';
 		}
 
-		if (set.pokeball || (set.hpType && !hasHP)) {
+		if (set.pokeball || (set.hpType && !hasHP) || set.gigantamax) {
 			buf += ',' + (set.hpType || '');
 			buf += ',' + toID(set.pokeball);
+			buf += ',' + (set.gigantamax ? 'G' : '');
 		}
 	}
 
@@ -879,14 +876,15 @@ Storage.fastUnpackTeam = function (buf) {
 		j = buf.indexOf(']', i);
 		var misc = undefined;
 		if (j < 0) {
-			if (i < buf.length) misc = buf.substring(i).split(',', 3);
+			if (i < buf.length) misc = buf.substring(i).split(',', 4);
 		} else {
-			if (i !== j) misc = buf.substring(i, j).split(',', 3);
+			if (i !== j) misc = buf.substring(i, j).split(',', 4);
 		}
 		if (misc) {
 			set.happiness = (misc[0] ? Number(misc[0]) : 255);
 			set.hpType = misc[1];
 			set.pokeball = misc[2];
+			set.gigantamax = !!misc[3];
 		}
 		if (j < 0) break;
 		i = j + 1;
@@ -994,14 +992,15 @@ Storage.unpackTeam = function (buf) {
 		j = buf.indexOf(']', i);
 		var misc = undefined;
 		if (j < 0) {
-			if (i < buf.length) misc = buf.substring(i).split(',', 3);
+			if (i < buf.length) misc = buf.substring(i).split(',', 4);
 		} else {
-			if (i !== j) misc = buf.substring(i, j).split(',', 3);
+			if (i !== j) misc = buf.substring(i, j).split(',', 4);
 		}
 		if (misc) {
 			set.happiness = (misc[0] ? Number(misc[0]) : 255);
 			set.hpType = misc[1];
 			set.pokeball = misc[2];
+			set.gigantamax = !!misc[3];
 		}
 		if (j < 0) break;
 		i = j + 1;
@@ -1100,11 +1099,16 @@ Storage.importTeam = function (buffer, teams) {
 		} else if (line.substr(0, 3) === '===' && teams) {
 			team = [];
 			line = $.trim(line.substr(3, line.length - 6));
-			var format = 'gen7';
+			var format = 'gen8';
+			var capacity = 6;
 			var bracketIndex = line.indexOf(']');
 			if (bracketIndex >= 0) {
 				format = line.substr(1, bracketIndex - 1);
 				if (format && format.slice(0, 3) !== 'gen') format = 'gen6' + format;
+				if (format && format.endsWith('-box')) {
+					format = format.slice(0, -4);
+					capacity = 24;
+				}
 				line = $.trim(line.substr(bracketIndex + 1));
 			}
 			if (teams.length && typeof teams[teams.length - 1].team !== 'string') {
@@ -1120,6 +1124,7 @@ Storage.importTeam = function (buffer, teams) {
 				name: line,
 				format: format,
 				team: team,
+				capacity: capacity,
 				folder: folder,
 				iconCache: ''
 			});
@@ -1174,6 +1179,8 @@ Storage.importTeam = function (buffer, teams) {
 		} else if (line.substr(0, 14) === 'Hidden Power: ') {
 			line = line.substr(14);
 			curSet.hpType = line;
+		} else if (line === 'Gigantamax: Yes') {
+			curSet.gigantamax = true;
 		} else if (line.substr(0, 5) === 'EVs: ') {
 			line = line.substr(5);
 			var evLines = line.split('/');
@@ -1236,7 +1243,7 @@ Storage.exportAllTeams = function () {
 	var buf = '';
 	for (var i = 0, len = Storage.teams.length; i < len; i++) {
 		var team = Storage.teams[i];
-		buf += '=== ' + (team.format ? '[' + team.format + '] ' : '') + (team.folder ? '' + team.folder + '/' : '') + team.name + ' ===\n\n';
+		buf += '=== ' + (team.format ? '[' + team.format + (team.capacity === 24 ? '-box] ' : '] ') : '') + (team.folder ? '' + team.folder + '/' : '') + team.name + ' ===\n\n';
 		buf += Storage.exportTeam(team.team);
 		buf += '\n';
 	}
@@ -1247,7 +1254,7 @@ Storage.exportFolder = function (folder) {
 	for (var i = 0, len = Storage.teams.length; i < len; i++) {
 		var team = Storage.teams[i];
 		if (team.folder + "/" === folder || team.format === folder) {
-			buf += '=== ' + (team.format ? '[' + team.format + '] ' : '') + (team.folder ? '' + team.folder + '/' : '') + team.name + ' ===\n\n';
+			buf += '=== ' + (team.format ? '[' + team.format + (team.capacity === 24 ? '-box] ' : '] ') : '') + (team.folder ? '' + team.folder + '/' : '') + team.name + ' ===\n\n';
 			buf += Storage.exportTeam(team.team);
 			buf += '\n';
 		}
@@ -1291,6 +1298,9 @@ Storage.exportTeam = function (team) {
 		}
 		if (curSet.hpType) {
 			text += 'Hidden Power: ' + curSet.hpType + "  \n";
+		}
+		if (curSet.gigantamax) {
+			text += 'Gigantamax: Yes  \n';
 		}
 		var first = true;
 		if (curSet.evs) {
@@ -1522,19 +1532,26 @@ Storage.nwLoadTeamFile = function (filename, localApp) {
 		return;
 	}
 
-	var format = '';
+	var format = 'gen8';
+	var capacity = 6;
 	var bracketIndex = line.indexOf(']');
 	if (bracketIndex >= 0) {
 		format = line.slice(1, bracketIndex);
+		if (format && !format.startsWith('gen')) format = 'gen6' + format;
+		if (format && /^gen6gen[0-9]/.test(format)) format = format.slice(4);
+		if (format && format.endsWith('-box')) {
+			format = format.slice(0, -4);
+			capacity = 24;
+		}
 		line = $.trim(line.slice(bracketIndex + 1));
 	}
-	if (format && format.slice(0, 3) !== 'gen') format = 'gen6' + format;
 	fs.readFile(this.dir + 'Teams/' + filename, function (err, data) {
 		if (!err) {
 			self.teams.push({
 				name: line,
 				format: format,
 				team: Storage.packTeam(Storage.importTeam('' + data)),
+				capacity: capacity,
 				folder: folder,
 				iconCache: '',
 				filename: filename
@@ -1608,7 +1625,7 @@ Storage.nwDeleteTeamFile = function (filename, callback) {
 Storage.nwSaveTeam = function (team) {
 	if (!team) return;
 	var filename = team.name + '.txt';
-	if (team.format) filename = '[' + team.format + '] ' + filename;
+	if (team.format) filename = '[' + team.format + (team.capacity === 24 ? '-box] ' : '] ') + filename;
 	filename = filename.trim().replace(/[\\\/]+/g, '');
 	if (team.folder) filename = '' + team.folder.replace(/[\\\/]+/g, '') + '/' + filename;
 
@@ -1656,7 +1673,7 @@ Storage.nwDoSaveAllTeams = function () {
 	for (var i = 0; i < this.teams.length; i++) {
 		var team = this.teams[i];
 		var filename = team.name + '.txt';
-		if (team.format) filename = '[' + team.format + '] ' + filename;
+		if (team.format) filename = '[' + team.format + (team.capacity === 24 ? '-box] ' : '] ') + filename;
 		filename = $.trim(filename).replace(/[\\\/]+/g, '');
 
 		team.filename = filename;

@@ -1,6 +1,9 @@
 (function ($) {
 
 	var HTMLRoom = this.HTMLRoom = this.Room.extend({
+		events: {
+			'click .username': 'clickUsername'
+		},
 		type: 'html',
 		title: 'Page',
 		initialize: function () {
@@ -24,7 +27,7 @@
 			app.send('/join ' + this.id);
 		},
 		leave: function () {
-			app.send('/leave ' + this.id);
+			app.send('/noreply /leave ' + this.id);
 		},
 		login: function () {
 			app.addPopup(LoginPopup);
@@ -32,13 +35,7 @@
 		addRow: function (line) {
 			if (!line || typeof line !== 'string') return;
 			if (line.charAt(0) !== '|') line = '||' + line;
-			var pipeIndex = line.indexOf('|', 1);
-			var row;
-			if (pipeIndex >= 0) {
-				row = [line.slice(1, pipeIndex), line.slice(pipeIndex + 1)];
-			} else {
-				row = [line.slice(1), ''];
-			}
+			var row = line.substr(1).split('|');
 			switch (row[0]) {
 			case 'init':
 				// ignore (handled elsewhere)
@@ -51,29 +48,24 @@
 				break;
 
 			case 'pagehtml':
-				this.$el.html(BattleLog.sanitizeHTML(row[1]));
+				this.$el.html(BattleLog.sanitizeHTML(row.slice(1).join('|')));
 				this.subtleNotifyOnce();
 				break;
 
 			case 'selectorhtml':
-				var pipeIndex2 = row[1].indexOf('|');
-				if (pipeIndex2 < 0) return;
-				this.$(row[1].slice(0, pipeIndex2)).html(BattleLog.sanitizeHTML(row[1].slice(pipeIndex2 + 1)));
+				if (!row[2]) return;
+				this.$(row[1]).html(BattleLog.sanitizeHTML(row.slice(2).join('|')));
 				this.subtleNotifyOnce();
 				break;
 
 			case 'notify':
-				if (!Dex.prefs('mute') && Dex.prefs('notifvolume')) {
-					soundManager.getSoundById('notif').setVolume(Dex.prefs('notifvolume')).play();
-				}
-				this.notifyOnce(row[1], row.slice(2).join('|'), 'highlight');
+				app.playNotificationSound();
+				this.notifyOnce(row[1], row[2], 'highlight');
 				break;
 
 			case 'tempnotify':
 				var notifyOnce = row[4] !== '!';
-				if (!this.notifications && !Dex.prefs('mute') && Dex.prefs('notifvolume')) {
-					soundManager.getSoundById('notif').setVolume(Dex.prefs('notifvolume')).play();
-				}
+				if (!this.notifications) app.playNotificationSound();
 				this.notify(row[2], row[3], row[1], notifyOnce);
 				break;
 
@@ -82,7 +74,12 @@
 				break;
 
 			}
-		}
+		},
+		clickUsername: function (e) {
+			e.stopPropagation();
+			var name = $(e.currentTarget).data('name') || $(e.currentTarget).text();
+			app.addPopup(UserPopup, {name: name, sourceEl: e.currentTarget});
+		},
 	});
 
 	this.LadderRoom = HTMLRoom.extend({
@@ -112,7 +109,7 @@
 		leave: function () {},
 		update: function () {
 			if (!this.curFormat) {
-				var buf = '<div class="ladder pad"><p>See a user\'s ranking with <a class="button" href="//pokemonshowdown.com/users/" target="_blank">User lookup</a></p>' +
+				var buf = '<div class="ladder pad"><p>See a user\'s ranking with <a class="button" href="//' + Config.routes.users + '/" target="_blank">User lookup</a></p>' +
 					//'<p><strong style="color:red">I\'m really really sorry, but as a warning: we\'re going to reset the ladder again soon to fix some more ladder bugs.</strong></p>' +
 					'<p>(btw if you couldn\'t tell the ladder screens aren\'t done yet; they\'ll look nicer than this once I\'m done.)</p>' +
 					'<p><button name="selectFormat" value="help" class="button"><i class="fa fa-info-circle"></i> How the ladder works</button></p><ul>';

@@ -236,7 +236,6 @@
 				pu: "PU",
 				zu: "(PU)",
 				nfe: "NFE",
-				lcuber: "LC Uber",
 				lc: "LC",
 				cap: "CAP",
 				caplc: "CAP LC",
@@ -351,7 +350,11 @@
 				var unreleasedHidden = pokemon.unreleasedHidden;
 				if (unreleasedHidden === 'Past' && (this.mod === 'natdex' || gen < 8)) unreleasedHidden = false;
 				if (abilities['S']) {
-					buf += '<span class="col twoabilitycol' + (unreleasedHidden ? ' unreleasedhacol' : '') + '">' + (abilities['H'] || '') + '<br />' + abilities['S'] + '</span>';
+					if (abilities['H']) {
+						buf += '<span class="col twoabilitycol' + (unreleasedHidden ? ' unreleasedhacol' : '') + '">' + (abilities['H'] || '') + '<br />(' + abilities['S'] + ')</span>';
+					} else {
+						buf += '<span class="col abilitycol">(' + abilities['S'] + ')</span>';
+					}
 				} else if (abilities['H']) {
 					buf += '<span class="col abilitycol' + (unreleasedHidden ? ' unreleasedhacol' : '') + '">' + abilities['H'] + '</span>';
 				} else {
@@ -543,7 +546,7 @@
 		// type
 		buf += '<span class="col typecol">';
 		buf += Dex.getTypeIcon(move.type);
-		buf += '<img src="' + Dex.resourcePrefix + 'sprites/categories/' + move.category + '.png" alt="' + move.category + '" height="14" width="32" />';
+		buf += Dex.getCategoryIcon(move.category);
 		buf += '</span> ';
 
 		// power, accuracy, pp
@@ -581,7 +584,7 @@
 		// type
 		buf += '<span class="col typecol">';
 		buf += Dex.getTypeIcon(move.type);
-		buf += '<img src="' + Dex.resourcePrefix + 'sprites/categories/' + move.category + '.png" alt="' + move.category + '" height="14" width="32" />';
+		buf += Dex.getCategoryIcon(move.category);
 		buf += '</span> ';
 
 		// power, accuracy, pp
@@ -618,7 +621,7 @@
 		// type
 		buf += '<span class="col typecol">';
 		buf += Dex.getTypeIcon(move.type);
-		buf += '<img src="' + Dex.resourcePrefix + 'sprites/categories/' + move.category + '.png" alt="' + move.category + '" height="14" width="32" />';
+		buf += Dex.getCategoryIcon(move.category);
 		buf += '</span> ';
 
 		// power, accuracy, pp
@@ -674,9 +677,7 @@
 		buf += '<span class="col namecol">' + name + '</span> ';
 
 		// category
-		buf += '<span class="col typecol">';
-		buf += '<img src="' + Dex.resourcePrefix + 'sprites/categories/' + category.name + '.png" alt="' + category.name + '" height="14" width="32" />';
-		buf += '</span> ';
+		buf += '<span class="col typecol">' + Dex.getCategoryIcon(category.name) + '</span> ';
 
 		// error
 		if (errorMessage) {

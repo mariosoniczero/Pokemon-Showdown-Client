@@ -111,6 +111,12 @@ select {
 	border-color: #2C9CC1;
 }
 
+.dark .button.notifying.subtle {
+	border-color: #000000;
+	background: #b2d7f7;
+	color: black;
+}
+
 .dark .button.notifying:hover {
 	background: #6BACC5;
 	border-color: #FFFFFF;
@@ -439,7 +445,7 @@ select {
 	background: #EEEEEE;
 	border-color: #CCCCCC;
 	border-style: solid;
-	border-size: 1px;
+	border-width: 1px;
 	color: #999999;
 	text-shadow: none;
 	box-shadow: 0 1px 2px rgba(0,0,0,.1);
@@ -452,6 +458,11 @@ select {
 .button.notifying:hover {
 	border-color: #604020;
 	background: #cfaf8f;
+}
+.button.notifying.subtle {
+	border-color: #000000;
+	background: #b2d7f7;
+	color: black;
 }
 .button.cur,
 .folderButton.cur,
@@ -1082,12 +1093,9 @@ p.or:after {
 	max-width: 270px;
 	border-radius: 20px;
 
-	background: rgba(201, 207, 219, .6);
+	background: rgba(0,0,0,.2);
 	color: white;
 	text-shadow: 0 1px 0 black;
-}
-.menugroup {
-	background: rgba(201, 207, 219, .4);
 	text-align: center;
 }
 
@@ -2436,6 +2444,9 @@ a.ilink.yours {
 	top: 22px;
 	color: transparent;
 }
+.teamlist .team.pc-box {
+	height: 139px;
+}
 
 .teamedit {
 	position: absolute;
@@ -3380,9 +3391,6 @@ a.ilink.yours {
 
 /* main menu */
 
-.dark .menugroup {
-	background: rgba(0,0,0,.2);
-}
 .dark .pm-window.focused h3,
 .dark .pm-window.focused .pm-log,
 .dark .pm-window.focused .pm-log-add {

@@ -242,7 +242,7 @@
 			if (Array.isArray(highlights)) {
 				highlights = {global: highlights};
 				// Migrate from the old highlight system
-				Dex.prefs('highlights', highlights);
+				Storage.prefs('highlights', highlights);
 			}
 			if (!Dex.prefs('noselfhighlight') && app.user.nameRegExp) {
 				if (app.user.nameRegExp.test(message)) return true;
@@ -418,7 +418,14 @@
 		},
 
 		// command parsing
-
+		checkBroadcast: function (cmd, text) {
+			if (text.charAt(0) === '!') {
+				this.add('|error|The command "!' + cmd + '" cannot be broadcast.');
+				this.add('|error|Use /' + cmd + ' to use it normally.');
+				return true;
+			}
+			return false;
+		},
 		parseCommand: function (text) {
 			var cmd = '';
 			var target = '';
@@ -439,6 +446,7 @@
 			case 'chal':
 			case 'chall':
 			case 'challenge':
+				if (this.checkBroadcast(cmd, text)) return false;
 				var targets = target.split(',');
 				for (var i = 0; i < targets.length; i++) {
 					targets[i] = $.trim(targets[i]);
@@ -447,7 +455,7 @@
 				var self = this;
 				var challenge = function (targets) {
 					target = toID(targets[0]);
-					self.challengeData = {userid: target, format: targets[1] || '', team: targets[2] || ''};
+					self.challengeData = {userid: target, format: targets.length > 1 ? targets.slice(1).join(',') : '', team: ''};
 					app.on('response:userdetails', self.challengeUserdetails, self);
 					app.send('/cmd userdetails ' + target);
 				};
@@ -463,6 +471,7 @@
 				return false;
 
 			case 'accept':
+				if (this.checkBroadcast(cmd, text)) return false;
 				var userid = toID(target);
 				if (userid) {
 					var $challenge = $('.pm-window').filter('div[data-userid="' + userid + '"]').find('button[name="acceptChallenge"]');
@@ -488,6 +497,7 @@
 				$challenges[0].click();
 				return false;
 			case 'reject':
+				if (this.checkBroadcast(cmd, text)) return false;
 				var userid = toID(target);
 				if (userid) {
 					var $challenge = $('.pm-window').filter('div[data-userid="' + userid + '"]').find('button[name="rejectChallenge"]');
@@ -516,6 +526,7 @@
 
 			case 'user':
 			case 'open':
+				if (this.checkBroadcast(cmd, text)) return false;
 				var openUser = function (target) {
 					app.addPopup(UserPopup, {name: target});
 				};
@@ -534,6 +545,7 @@
 			case 'whisper':
 			case 'w':
 			case 'msg':
+				if (this.checkBroadcast(cmd, text)) return false;
 				var commaIndex = target.indexOf(',');
 				if (commaIndex < 0) break;
 				if (!$.trim(target.slice(commaIndex + 1))) {
@@ -543,6 +555,7 @@
 				break;
 
 			case 'debug':
+				if (this.checkBroadcast(cmd, text)) return false;
 				if (target === 'extractteams') {
 					app.addPopup(Popup, {
 						type: 'modal',
@@ -561,16 +574,19 @@
 				return false;
 
 			case 'news':
+				if (this.checkBroadcast(cmd, text)) return false;
 				app.rooms[''].addNews();
 				return false;
 			case 'autojoin':
 			case 'cmd':
 			case 'crq':
 			case 'query':
+				if (this.checkBroadcast(cmd, text)) return false;
 				this.add('This is a PS system command; do not use it.');
 				return false;
 
 			case 'ignore':
+				if (this.checkBroadcast(cmd, text)) return false;
 				if (!target) {
 					this.parseCommand('/help ignore');
 					return false;
@@ -586,6 +602,7 @@
 				return false;
 
 			case 'unignore':
+				if (this.checkBroadcast(cmd, text)) return false;
 				if (!target) {
 					this.parseCommand('/help unignore');
 					return false;
@@ -599,6 +616,7 @@
 				return false;
 
 			case 'ignorelist':
+				if (this.checkBroadcast(cmd, text)) return false;
 				var ignoreList = Object.keys(app.ignore);
 				if (ignoreList.length === 0) {
 					this.add('You are currently not ignoring anyone.');
@@ -608,6 +626,7 @@
 				return false;
 
 			case 'clear':
+				if (this.checkBroadcast(cmd, text)) return false;
 				if (this.clear) {
 					this.clear();
 				} else {
@@ -616,6 +635,7 @@
 				return false;
 
 			case 'clearpms':
+				if (this.checkBroadcast(cmd, text)) return false;
 				var $pms = $('.pm-window');
 				if (!$pms.length) {
 					this.add('You do not have any PM windows open.');
@@ -638,6 +658,7 @@
 				return false;
 
 			case 'nick':
+				if (this.checkBroadcast(cmd, text)) return false;
 				if ($.trim(target)) {
 					app.user.rename(target);
 				} else {
@@ -646,11 +667,13 @@
 				return false;
 
 			case 'logout':
+				if (this.checkBroadcast(cmd, text)) return false;
 				app.user.logout();
 				return false;
 			case 'showdebug':
+				if (this.checkBroadcast(cmd, text)) return false;
 				this.add('Debug battle messages: ON');
-				Dex.prefs('showdebug', true);
+				Storage.prefs('showdebug', true);
 				var debugStyle = $('#debugstyle').get(0);
 				var onCSS = '.debug {display: block;}';
 				if (!debugStyle) {
@@ -660,8 +683,9 @@
 				}
 				return false;
 			case 'hidedebug':
+				if (this.checkBroadcast(cmd, text)) return false;
 				this.add('Debug battle messages: HIDDEN');
-				Dex.prefs('showdebug', false);
+				Storage.prefs('showdebug', false);
 				var debugStyle = $('#debugstyle').get(0);
 				var offCSS = '.debug {display: none;}';
 				if (!debugStyle) {
@@ -672,6 +696,7 @@
 				return false;
 
 			case 'showjoins':
+				if (this.checkBroadcast(cmd, text)) return false;
 				var showjoins = Dex.prefs('showjoins') || {};
 				var serverShowjoins = showjoins[Config.server.id] || {};
 				if (target) {
@@ -687,9 +712,10 @@
 					this.add('Join/leave messages: ALWAYS ON');
 				}
 				showjoins[Config.server.id] = serverShowjoins;
-				Dex.prefs('showjoins', showjoins);
+				Storage.prefs('showjoins', showjoins);
 				return false;
 			case 'hidejoins':
+				if (this.checkBroadcast(cmd, text)) return false;
 				var showjoins = Dex.prefs('showjoins') || {};
 				var serverShowjoins = showjoins[Config.server.id] || {};
 				if (target) {
@@ -705,28 +731,33 @@
 					this.add('Join/leave messages: AUTOMATIC');
 				}
 				showjoins[Config.server.id] = serverShowjoins;
-				Dex.prefs('showjoins', showjoins);
+				Storage.prefs('showjoins', showjoins);
 				return false;
 
 			case 'showbattles':
+				if (this.checkBroadcast(cmd, text)) return false;
 				this.add('Battle messages: ON');
-				Dex.prefs('showbattles', true);
+				Storage.prefs('showbattles', true);
 				return false;
 			case 'hidebattles':
+				if (this.checkBroadcast(cmd, text)) return false;
 				this.add('Battle messages: HIDDEN');
-				Dex.prefs('showbattles', false);
+				Storage.prefs('showbattles', false);
 				return false;
 
 			case 'unpackhidden':
+				if (this.checkBroadcast(cmd, text)) return false;
 				this.add('Locked/banned users\' chat messages: ON');
-				Dex.prefs('nounlink', true);
+				Storage.prefs('nounlink', true);
 				return false;
 			case 'packhidden':
+				if (this.checkBroadcast(cmd, text)) return false;
 				this.add('Locked/banned users\' chat messages: HIDDEN');
-				Dex.prefs('nounlink', false);
+				Storage.prefs('nounlink', false);
 				return false;
 
 			case 'timestamps':
+				if (this.checkBroadcast(cmd, text)) return false;
 				var targets = target.split(',');
 				if ((['all', 'lobby', 'pms'].indexOf(targets[0]) === -1) || targets.length < 2 ||
 					(['off', 'minutes', 'seconds'].indexOf(targets[1] = targets[1].trim()) === -1)) {
@@ -754,43 +785,46 @@
 					break;
 				}
 				this.add("Timestamps preference set to: '" + targets[1] + "' for '" + targets[0] + "'.");
-				Dex.prefs('timestamps', timestamps);
+				Storage.prefs('timestamps', timestamps);
 				return false;
 
 			case 'hl':
 			case 'highlight':
+				if (this.checkBroadcast(cmd, text)) return false;
 				var highlights = Dex.prefs('highlights') || {};
-				if (target.indexOf(',') > -1) {
-					var targets = target.match(/([^,]+?({\d*,\d*})?)+/g);
+				if (target.includes(' ')) {
+					var targets = target.split(' ');
+					var subCmd = targets[0];
+					targets = targets.slice(1).join(' ').match(/([^,]+?({\d*,\d*})?)+/g);
 					// trim the targets to be safe
 					for (var i = 0, len = targets.length; i < len; i++) {
 						targets[i] = targets[i].replace(/\n/g, '').trim();
 					}
-					switch (targets[0]) {
+					switch (subCmd) {
 					case 'add': case 'roomadd':
-						var key = targets[0] === 'roomadd' ? (Config.server.id + '#' + this.id) : 'global';
+						var key = subCmd === 'roomadd' ? (Config.server.id + '#' + this.id) : 'global';
 						var highlightList = highlights[key] || [];
-						for (var i = 1, len = targets.length; i < len; i++) {
+						for (var i = 0, len = targets.length; i < len; i++) {
 							if (!targets[i]) continue;
 							if (/[\\^$*+?()|{}[\]]/.test(targets[i])) {
 								// Catch any errors thrown by newly added regular expressions so they don't break the entire highlight list
 								try {
 									new RegExp(targets[i]);
 								} catch (e) {
-									return this.add(e.message.substr(0, 28) === 'Invalid regular expression: ' ? e.message : 'Invalid regular expression: /' + targets[i] + '/: ' + e.message);
+									return this.add('|error|' + (e.message.substr(0, 28) === 'Invalid regular expression: ' ? e.message : 'Invalid regular expression: /' + targets[i] + '/: ' + e.message));
 								}
 							}
-							if (highlightList.indexOf(targets[i]) > -1) {
-								return this.add(targets[i] + ' is already on your highlights list.');
+							if (highlightList.includes(targets[i])) {
+								return this.add('|error|' + targets[i] + ' is already on your highlights list.');
 							}
 						}
-						highlights[key] = highlightList.concat(targets.slice(1));
+						highlights[key] = highlightList.concat(targets);
 						this.add("Now highlighting on " + (key === 'global' ? "(everywhere): " : "(in " + key + "): ") + highlights[key].join(', '));
 						// We update the regex
 						this.updateHighlightRegExp(highlights);
 						break;
 					case 'delete': case 'roomdelete':
-						var key = targets[0] === 'roomdelete' ? (Config.server.id + '#' + this.id) : 'global';
+						var key = subCmd === 'roomdelete' ? (Config.server.id + '#' + this.id) : 'global';
 						var highlightList = highlights[key] || [];
 						var newHls = [];
 						for (var i = 0, len = highlightList.length; i < len; i++) {
@@ -804,28 +838,37 @@
 						this.updateHighlightRegExp(highlights);
 						break;
 					default:
+						if (this.checkBroadcast(cmd, text)) return false;
 						// Wrong command
-						this.add('Error: Invalid /highlight command.');
+						this.add('|error|Invalid /highlight command.');
 						this.parseCommand('/help highlight'); // show help
 						return false;
 					}
-					Dex.prefs('highlights', highlights);
+					Storage.prefs('highlights', highlights);
 				} else {
-					if (target === 'delete') {
-						Dex.prefs('highlights', false);
-						this.updateHighlightRegExp({});
-						this.add("All highlights cleared");
+					if (this.checkBroadcast(cmd, text)) return false;
+					if (['clear', 'roomclear', 'clearall'].includes(target)) {
+						var key = (target === 'roomclear' ? (Config.server.id + '#' + this.id) : (target === 'clearall' ? '' : 'global'));
+						if (key) {
+							highlights[key] = [];
+							this.add("All highlights (" + (key === 'global' ? "everywhere" : "in " + key) + ") cleared.");
+							this.updateHighlightRegExp(highlightList);
+						} else {
+							Storage.prefs('highlights', false);
+							this.add("All highlights (in all rooms and globally) cleared.");
+							this.updateHighlightRegExp({});
+						}
 					} else if (['show', 'list', 'roomshow', 'roomlist'].includes(target)) {
 						// Shows a list of the current highlighting words
 						var key = target.startsWith('room') ? (Config.server.id + '#' + this.id) : 'global';
 						if (highlights[key] && highlights[key].length > 0) {
 							this.add("Current highlight list " + (key === 'global' ? "(everywhere): " : "(in " + key + "): ") + highlights[key].join(", "));
 						} else {
-							this.add('Your highlight list' + (key === 'global' ? '' : ' in ' + this.id) + ' is empty.');
+							this.add('Your highlight list' + (key === 'global' ? '' : ' in ' + key) + ' is empty.');
 						}
 					} else {
 						// Wrong command
-						this.add('Error: Invalid /highlight command.');
+						this.add('|error|Invalid /highlight command.');
 						this.parseCommand('/help highlight'); // show help
 						return false;
 					}
@@ -836,6 +879,7 @@
 			case 'ranking':
 			case 'rating':
 			case 'ladder':
+				if (this.checkBroadcast(cmd, text)) return false;
 				if (app.localLadder) return text;
 				if (!target) {
 					target = app.user.get('userid');
@@ -912,7 +956,7 @@
 					var userid = toID(targets[0]);
 					var registered = app.user.get('registered');
 					if (registered && registered.userid === userid) {
-						buffer += '<tr><td colspan="8" style="text-align:right"><a href="//pokemonshowdown.com/users/' + userid + '">Reset W/L</a></tr></td>';
+						buffer += '<tr><td colspan="8" style="text-align:right"><a href="//' + Config.routes.users + '/' + userid + '">Reset W/L</a></tr></td>';
 					}
 					buffer += '</table></div>';
 					self.add('|raw|' + buffer);
@@ -920,6 +964,7 @@
 				return false;
 
 			case 'buttonban':
+				if (this.checkBroadcast(cmd, text)) return false;
 				var self = this;
 				app.addPopupPrompt("Why do you wish to ban this user?", "Ban user", function (reason) {
 					self.send('/ban ' + toName(target) + ', ' + (reason || ''));
@@ -927,6 +972,7 @@
 				return false;
 
 			case 'buttonmute':
+				if (this.checkBroadcast(cmd, text)) return false;
 				var self = this;
 				app.addPopupPrompt("Why do you wish to mute this user?", "Mute user", function (reason) {
 					self.send('/mute ' + toName(target) + ', ' + (reason || ''));
@@ -934,11 +980,13 @@
 				return false;
 
 			case 'buttonunmute':
+				if (this.checkBroadcast(cmd, text)) return false;
 				this.send('/unmute ' + target);
 				return false;
 
 			case 'buttonkick':
 			case 'buttonwarn':
+				if (this.checkBroadcast(cmd, text)) return false;
 				var self = this;
 				app.addPopupPrompt("Why do you wish to warn this user?", "Warn user", function (reason) {
 					self.send('/warn ' + toName(target) + ', ' + (reason || ''));
@@ -948,6 +996,7 @@
 			case 'joim':
 			case 'join':
 			case 'j':
+				if (this.checkBroadcast(cmd, text)) return false;
 				if (noSpace) return text;
 				if (app.rooms[target]) {
 					app.focusRoom(target);
@@ -962,20 +1011,23 @@
 
 			case 'part':
 			case 'leave':
+				if (this.checkBroadcast(cmd, text)) return false;
 				if (this.requestLeave && !this.requestLeave()) return false;
 				return text;
 
 			case 'avatar':
+				if (this.checkBroadcast(cmd, text)) return false;
 				var parts = target.split(',');
 				var avatar = parts[0].toLowerCase().replace(/[^a-z0-9-]+/g, '');
 				// Replace avatar number with name before sending it to the server, only the client knows what to do with the numbers
 				if (window.BattleAvatarNumbers && Object.prototype.hasOwnProperty.call(window.BattleAvatarNumbers, avatar)) {
 					avatar = window.BattleAvatarNumbers[avatar];
 				}
-				Dex.prefs('avatar', avatar);
+				Storage.prefs('avatar', avatar);
 				return '/avatar ' + avatar; // Send the command through to the server.
 
 			case 'afd':
+				if (this.checkBroadcast(cmd, text)) return false;
 				var cleanedTarget = toID(target);
 				if (cleanedTarget === 'off' || cleanedTarget === 'disable') {
 					Config.server.afd = false;
@@ -1004,10 +1056,18 @@
 
 			// documentation of client commands
 			case 'help':
+			case 'h':
+				if (this.checkBroadcast(cmd, text)) return false;
 				switch (toID(target)) {
+				case 'chal':
+				case 'chall':
 				case 'challenge':
 					this.add('/challenge - Open a prompt to challenge a user to a battle.');
 					this.add('/challenge [user] - Challenge the user [user] to a battle.');
+					this.add('/challenge [user], [format] - Challenge the user [user] to a battle in the specified [format].');
+					this.add('/challenge [user], [format] @@@ [rules] - Challenge the user [user] to a battle with custom rules.');
+					this.add('[rules] can be a comma-separated list of: [added rule], ![removed rule], -[banned thing], *[restricted thing], +[unbanned/unrestricted thing]');
+					this.add('/battlerules - Detailed information on what can go in [rules].');
 					return false;
 				case 'accept':
 					this.add('/accept - Accept a challenge if only one is pending.');
@@ -1067,13 +1127,15 @@
 				case 'highlight':
 				case 'hl':
 					this.add('Set up highlights:');
-					this.add('/highlight add, [word] - Add the word [word] to the highlight list.');
-					this.add('/highlight roomadd, [word] - Add the word [word] to the highlight list of whichever room you used the command in.');
+					this.add('/highlight add [word 1], [word 2], [...] - Add the provided list of words to your highlight list.');
+					this.add('/highlight roomadd [word 1], [word 2], [...] - Add the provided list of words to the highlight list of whichever room you used the command in.');
 					this.add('/highlight list - List all words that currently highlight you.');
 					this.add('/highlight roomlist - List all words that currently highlight you in whichever room you used the command in.');
-					this.add('/highlight delete, [word] - Delete the word [word] from your entire highlight list.');
-					this.add('/highlight roomdelete, [word] - Delete the word [word] from the highlight list of whichever room you used the command in.');
-					this.add('/highlight delete - Clear the highlight list.');
+					this.add('/highlight delete [word 1], [word 2], [...] - Delete the provided list of words from your entire highlight list.');
+					this.add('/highlight roomdelete [word 1], [word 2], [...] - Delete the provided list of words from the highlight list of whichever room you used the command in.');
+					this.add('/highlight clear - Clear your global highlight list.');
+					this.add('/highlight roomclear - Clear the highlight list of whichever room you used the command in.');
+					this.add('/highlight clearall - Clear your entire highlight list (all rooms and globally).');
 					return false;
 				case 'rank':
 				case 'ranking':
@@ -1230,7 +1292,7 @@
 			app.send('/join ' + this.id);
 		},
 		leave: function () {
-			app.send('/leave ' + this.id);
+			app.send('/noreply /leave ' + this.id);
 			app.updateAutojoin();
 		},
 		requestLeave: function (e) {
@@ -1242,6 +1304,9 @@
 		},
 		receive: function (data) {
 			this.add(data);
+		},
+		getUserGroup: function (userid) {
+			return (app.rooms[this.id].users[userid] || {group: ' '}).group;
 		},
 		add: function (log) {
 			if (typeof log === 'string') log = log.split('\n');
@@ -1275,9 +1340,7 @@
 			if (autoscroll) {
 				this.$chatFrame.scrollTop(this.$chat.height());
 			}
-			if (!app.focused && !Dex.prefs('mute') && Dex.prefs('notifvolume')) {
-				soundManager.getSoundById('notif').setVolume(Dex.prefs('notifvolume')).play();
-			}
+			if (!app.focused) app.playNotificationSound();
 		},
 		addRow: function (line) {
 			var name, name2, silent;
@@ -1382,9 +1445,7 @@
 
 				case 'notify':
 					if (row[3] && !this.getHighlight(row[3])) return;
-					if (!Dex.prefs('mute') && Dex.prefs('notifvolume')) {
-						soundManager.getSoundById('notif').setVolume(Dex.prefs('notifvolume')).play();
-					}
+					app.playNotificationSound();
 					this.notifyOnce(row[1], row[2], 'highlight');
 					break;
 
@@ -1392,9 +1453,7 @@
 					var notifyOnce = row[4] !== '!';
 					if (!notifyOnce) row[4] = '';
 					if (row[4] && !this.getHighlight(row[4])) return;
-					if (!this.notifications && !Dex.prefs('mute') && Dex.prefs('notifvolume')) {
-						soundManager.getSoundById('notif').setVolume(Dex.prefs('notifvolume')).play();
-					}
+					if (!this.notifications) app.playNotificationSound();
 					this.notify(row[2], row[3], row[1], notifyOnce);
 					break;
 
@@ -1403,7 +1462,7 @@
 					break;
 
 				case 'error':
-					this.$chat.append('<div class="notice message-error">' + BattleLog.escapeHTML(row.slice(1).join('|')) + '</div>');
+					this.$chat.append('<div class="notice message-error">' + BattleLog.parseMessage(row.slice(1).join('|'), true) + '</div>');
 					break;
 
 				case 'uhtml':
@@ -1427,6 +1486,7 @@
 					break;
 
 				case 'unlink':
+					// |unlink| is deprecated in favor of |hidelines|
 					// note: this message has global effects, but it's handled here
 					// so that it can be included in the scrollback buffer.
 					if (Dex.prefs('nounlink')) return;
@@ -1446,7 +1506,26 @@
 						this.$chat.children().last().append(' <button name="toggleMessages" value="' + user + '" class="subtle"><small>(' + $messages.length + ' line' + ($messages.length > 1 ? 's' : '') + ' from ' + user + ' hidden)</small></button>');
 					}
 					break;
-
+				case 'hidelines':
+					if (Dex.prefs('nounlink')) return;
+					var user = toID(row[2]);
+					var $messages = $('.chatmessage-' + user);
+					if (!$messages.length) break;
+					$messages.find('a').contents().unwrap();
+					if (row[1] !== 'unlink') {
+						$messages = this.$chat.find('.chatmessage-' + user);
+						if (!$messages.length) break;
+						var lineCount = parseInt(row[3], 10) || 0;
+						if (lineCount) $messages = $messages.slice(-lineCount);
+						$messages.hide().addClass('revealed').find('button').parent().remove();
+						var staffGroups = Object.keys(Config.groups).filter(function (group) {
+							return ['staff', 'leadership'].includes(Config.groups[group].type);
+						});
+						if (row[1] === 'hide' || staffGroups.includes(this.getUserGroup(app.user.get('userid')))) {
+							this.$chat.children().last().append(' <button name="toggleMessages" value="' + user + '" class="subtle"><small>(' + $messages.length + ' line' + ($messages.length > 1 ? 's' : '') + ' from ' + user + ' hidden)</small></button>');
+						}
+					}
+					break;
 				case 'tournament':
 				case 'tournaments':
 					if (Dex.prefs('tournaments') === 'hide') {
@@ -1622,7 +1701,7 @@
 				return; // PMs independently notify in the main menu; no need to make them notify again with `inchatpm`.
 			}
 
-			var lastMessageDates = Dex.prefs('logtimes') || (Dex.prefs('logtimes', {}), Dex.prefs('logtimes'));
+			var lastMessageDates = Dex.prefs('logtimes') || (Storage.prefs('logtimes', {}), Dex.prefs('logtimes'));
 			if (!lastMessageDates[Config.server.id]) lastMessageDates[Config.server.id] = {};
 			var lastMessageDate = lastMessageDates[Config.server.id][this.id] || 0;
 			// because the time offset to the server can vary slightly, subtract it to not have it affect comparisons between dates
@@ -1651,9 +1730,7 @@
 			}
 
 			if (mayNotify && isHighlighted) {
-				if (!Dex.prefs('mute') && Dex.prefs('notifvolume')) {
-					soundManager.getSoundById('notif').setVolume(Dex.prefs('notifvolume')).play();
-				}
+				app.playNotificationSound();
 				var $lastMessage = this.$chat.children().last();
 				var notifyTitle = "Mentioned by " + name + (this.id === 'lobby' ? '' : " in " + this.title);
 				var notifyText = $lastMessage.html().indexOf('<span class="spoiler">') >= 0 ? '(spoiler)' : $lastMessage.children().last().text();
@@ -1711,8 +1788,12 @@
 			'click .userlist-count': 'toggleUserlist'
 		},
 		construct: function () {
+			var plural = this.room.userCount.users === 1 ? ' user' : ' users';
 			var buf = '';
-			buf += '<li class="userlist-count" id="' + this.room.id + '-userlist-users" style="text-align:center;padding:2px 0"><small><span id="' + this.room.id + '-usercount-users">' + (this.room.userCount.users || '0') + '</span> users</small></li>';
+			var usersString = "" + (this.room.userCount.users || '0') + plural;
+			buf += '<li class="userlist-count" id="' + this.room.id + '-userlist-users" style="text-align:center;padding:2px 0">';
+			buf += '<small id="' + this.room.id + '-usercount-users">' + usersString + '</small></li>';
+
 			var users = [];
 			if (this.room.users) {
 				var self = this;
@@ -1754,7 +1835,7 @@
 		},
 		updateUserCount: function () {
 			var users = Math.max(this.room.userCount.users || 0, this.room.userCount.globalUsers || 0);
-			$('#' + this.room.id + '-usercount-users').html('' + users);
+			$('#' + this.room.id + '-usercount-users').html('' + users + (users === 1 ? ' user' : ' users'));
 		},
 		add: function (userid) {
 			$('#' + this.room.id + '-userlist-user-' + userid).remove();
@@ -1832,8 +1913,6 @@
 				{order: (Config.defaultOrder || 10006.5)}
 			).order;
 
-			if (a === 'zarel' && aRank === 10003) aRank = 10000.5;
-			if (b === 'zarel' && bRank === 10003) bRank = 10000.5;
 			if (aRank !== bRank) return aRank - bRank;
 			if (aUser.away !== bUser.away) return aUser.away - bUser.away;
 			return (a > b ? 1 : -1);

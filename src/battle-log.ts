@@ -26,6 +26,11 @@ class BattleLog {
 		leaves: string[],
 		element: HTMLDivElement,
 	} | null = null;
+	lastRename: {
+		from: string,
+		to: string,
+		element: HTMLDivElement,
+	} | null = null;
 	/**
 	 * * -1 = spectator: "Red sent out Pikachu!" "Blue's Eevee used Tackle!"
 	 * * 0 = player 1: "Go! Pikachu!" "The opposing Eevee used Tackle!"
@@ -73,6 +78,7 @@ class BattleLog {
 		let divHTML = '';
 		let noNotify: boolean | undefined;
 		if (!['join', 'j', 'leave', 'l'].includes(args[0])) this.joinLeave = null;
+		if (!['name', 'n'].includes(args[0])) this.lastRename = null;
 		switch (args[0]) {
 		case 'chat': case 'c': case 'c:':
 			let battle = this.scene?.battle;
@@ -101,6 +107,7 @@ class BattleLog {
 
 		case 'join': case 'j': case 'leave': case 'l': {
 			const user = BattleTextParser.parseNameParts(args[1]);
+			if (battle?.ignoreSpects && ' +'.includes(user.group)) return;
 			const formattedUser = user.group + user.name;
 			const isJoin = (args[0].charAt(0) === 'j');
 			if (!this.joinLeave) {
@@ -133,11 +140,21 @@ class BattleLog {
 
 		case 'name': case 'n': {
 			const user = BattleTextParser.parseNameParts(args[1]);
-			if (toID(args[2]) !== toID(user.name)) {
-				divHTML = '<small>' + BattleLog.escapeHTML(user.group + user.name) + ' renamed from ' + BattleLog.escapeHTML(args[2]) + '.</small>';
+			if (toID(args[2]) === toID(user.name)) return;
+			if (!this.lastRename || toID(this.lastRename.to) !== toID(user.name)) {
+				this.lastRename = {
+					from: args[2],
+					to: '',
+					element: document.createElement('div'),
+				};
+				this.lastRename.element.className = 'chat';
 			}
-			break;
+			this.lastRename.to = user.group + user.name;
+			this.lastRename.element.innerHTML = `<small>${BattleLog.escapeHTML(this.lastRename.to)} renamed from ${BattleLog.escapeHTML(this.lastRename.from)}.</small>`;
+			(preempt ? this.preemptElem : this.innerElem).appendChild(this.lastRename.element);
+			return;
 		}
+
 		case 'chatmsg': case '':
 			divHTML = BattleLog.escapeHTML(args[1]);
 			break;
@@ -168,6 +185,7 @@ class BattleLog {
 			return;
 
 		case 'unlink': {
+			// |unlink| is deprecated in favor of |hidelines|
 			const user = toID(args[2]) || toID(args[1]);
 			this.unlinkChatFrom(user);
 			if (args[2]) {
@@ -176,12 +194,23 @@ class BattleLog {
 			}
 			return;
 		}
+
+		case 'hidelines': {
+			const user = toID(args[2]);
+			this.unlinkChatFrom(user);
+			if (args[1] !== 'unlink') {
+				const lineCount = parseInt(args[3], 10);
+				this.hideChatFrom(user, args[1] === 'hide', lineCount);
+			}
+			return;
+		}
+
 		case 'debug':
 			divClass = 'debug';
 			divHTML = '<div class="chat"><small style="color:#999">[DEBUG] ' + BattleLog.escapeHTML(args[1]) + '.</small></div>';
 			break;
 
-		case 'seed': case 'choice': case ':': case 'timer':
+		case 'seed': case 'choice': case ':': case 'timer': case 't:':
 		case 'J': case 'L': case 'N': case 'spectator': case 'spectatorleave':
 		case 'initdone':
 			return;
@@ -454,7 +483,7 @@ class BattleLog {
 	static usernameColor(name: ID) {
 		if (this.colorCache[name]) return this.colorCache[name];
 		let hash;
-		if (window.Config?.customcolors?.[name]) {
+		if (Config.customcolors[name]) {
 			hash = MD5(Config.customcolors[name]);
 		} else {
 			hash = MD5(name);
@@ -585,7 +614,7 @@ class BattleLog {
 		case 'text':
 			return ['chat', BattleLog.parseMessage(target)];
 		case 'error':
-			return ['chat message-error', BattleLog.escapeHTML(target)];
+			return ['chat message-error', formatText(target, true)];
 		case 'html':
 			return [
 				'chat chatmessage-' + toID(name) + hlClass + mineClass,
@@ -616,12 +645,12 @@ class BattleLog {
 		}
 	}
 
-	static parseMessage(str: string) {
+	static parseMessage(str: string, isTrusted = false) {
 		// Don't format console commands (>>).
 		if (str.substr(0, 3) === '>> ' || str.substr(0, 4) === '>>> ') return this.escapeHTML(str);
 		// Don't format console results (<<).
 		if (str.substr(0, 3) === '<< ') return this.escapeHTML(str);
-		str = formatText(str);
+		str = formatText(str, isTrusted);
 
 		let options = BattleLog.prefs('chatformatting') || {};
 
@@ -639,9 +668,9 @@ class BattleLog {
 	}
 
 	static interstice = (() => {
-		const whitelist: string[] = window.Config?.whitelist || [];
+		const whitelist: string[] = Config.whitelist;
 		const patterns = whitelist.map(entry => new RegExp(
-			`^(https?:)?//([A-Za-z0-9-]*\\.)?${entry}(/.*)?`,
+			`^(https?:)?//([A-Za-z0-9-]*\\.)?${entry.replace(/\./g, '\\.')}(/.*)?`,
 		'i'));
 		return {
 			isWhitelisted(uri: string) {
@@ -655,7 +684,7 @@ class BattleLog {
 				return false;
 			},
 			getURI(uri: string) {
-				return 'http://pokemonshowdown.com/interstice?uri=' + encodeURIComponent(uri);
+				return `http://${Config.routes.root}/interstice?uri=${encodeURIComponent(uri)}`;
 			},
 		};
 	})();
@@ -666,12 +695,20 @@ class BattleLog {
 		if (!('html4' in window)) {
 			throw new Error('sanitizeHTML requires caja');
 		}
-		// Add <marquee> <blink> <psicon> to the whitelist.
+
+		// By default, Caja will ban any HTML tags it doesn't recognize.
+		// Additional HTML tags to allow:
 		Object.assign(html4.ELEMENTS, {
 			marquee: 0,
 			blink: 0,
 			psicon: html4.eflags['OPTIONAL_ENDTAG'] | html4.eflags['EMPTY'],
+			username: 0,
+			spotify: 0,
+			youtube: 0,
 		});
+
+		// By default, Caja will ban any attributes it doesn't recognize.
+		// Additional attributes to allow:
 		Object.assign(html4.ATTRIBS, {
 			// See https://developer.mozilla.org/en-US/docs/Web/HTML/Element/marquee
 			'marquee::behavior': 0,
@@ -687,110 +724,163 @@ class BattleLog {
 			'marquee::width': 0,
 			'psicon::pokemon': 0,
 			'psicon::item': 0,
+			'psicon::type': 0,
+			'psicon::category': 0,
+			'username::name': 0,
+			'form::data-send': 0,
+			'button::data-send': 0,
 			'*::aria-label': 0,
 			'*::aria-hidden': 0,
 		});
 
+		// Caja unfortunately doesn't document how `tagPolicy` works, so
+		// here's how it goes:
+
+		// Every opening tag and attributes is filtered through
+		// `tagPolicy`, being replaced by the {tagName, attribs} returned.
+		// Returning `undefined` means that the tag will be removed entirely.
+
+		// We run Caja's built-in tag sanitization in the first line of our
+		// custom tagPolicy, and its attribs sanitization midway through, with
+		// `sanitizeAttribs`.
+
+		// (n.b. tag contents etc can't be modified in this step.)
+
+		/**
+		 * @param tagName Lowercase tag name
+		 * @param attribs attribs in the form of [key, value, key, value]
+		 * @return undefined to remove the tag
+		 */
 		this.tagPolicy = (tagName: string, attribs: string[]) => {
 			if (html4.ELEMENTS[tagName] & html4.eflags['UNSAFE']) {
 				return;
 			}
-			let targetIdx = 0;
-			let srcIdx = 0;
-			if (tagName === 'a') {
-				// Special handling of <a> tags.
 
+			function getAttrib(key: string) {
 				for (let i = 0; i < attribs.length - 1; i += 2) {
-					switch (attribs[i]) {
-					case 'target':
-						targetIdx = i + 1;
-						break;
+					if (attribs[i] === key) {
+						return attribs[i + 1];
+					}
+				}
+				return undefined;
+			}
+			function setAttrib(key: string, value: string) {
+				for (let i = 0; i < attribs.length - 1; i += 2) {
+					if (attribs[i] === key) {
+						attribs[i + 1] = value;
+						return;
+					}
+				}
+				attribs.push(key, value);
+			}
+			function deleteAttrib(key: string) {
+				for (let i = 0; i < attribs.length - 1; i += 2) {
+					if (attribs[i] === key) {
+						attribs.splice(i, 2);
+						return;
 					}
 				}
 			}
+
 			let dataUri = '';
-			if (tagName === 'img') {
-				for (let i = 0; i < attribs.length - 1; i += 2) {
-					if (attribs[i] === 'src' && attribs[i + 1].substr(0, 11) === 'data:image/') {
-						srcIdx = i;
-						dataUri = attribs[i + 1];
-					}
-					if (attribs[i] === 'src' && attribs[i + 1].substr(0, 2) === '//') {
-						if (location.protocol !== 'http:' && location.protocol !== 'https:') {
-							attribs[i + 1] = 'http:' + attribs[i + 1];
-						}
+			let targetReplace = false;
+
+			if (tagName === 'a') {
+				if (getAttrib('target') === 'replace') {
+					targetReplace = true;
+				}
+			} else if (tagName === 'img') {
+				const src = getAttrib('src') || '';
+				if (src.startsWith('data:image/')) {
+					dataUri = src;
+				}
+				if (src.startsWith('//')) {
+					if (location.protocol !== 'http:' && location.protocol !== 'https:') {
+						// in testclient with `file://`, fix src so it still works
+						setAttrib('src', 'https:' + src);
 					}
 				}
+			} else if (tagName === 'username') {
+				// <username> is a custom element that handles namecolors
+				tagName = 'strong';
+				const color = this.usernameColor(toID(getAttrib('name')));
+				const style = getAttrib('style');
+				setAttrib('style', `${style};color:${color}`);
+			} else if (tagName === 'spotify') {
+				// <iframe src="https://open.spotify.com/embed/track/6aSYnCIwcLpnDXngGKAEzZ" width="300" height="380" frameborder="0" allowtransparency="true" allow="encrypted-media"></iframe>
+				const src = getAttrib('src') || '';
+				const songId = /(?:\?v=|\/track\/)([A-Za-z0-9]+)/.exec(src)?.[1];
+
+				return {
+					tagName: 'iframe',
+					attribs: ['src', `https://open.spotify.com/embed/track/${songId}`, 'width', '300', 'height', '380', 'frameborder', '0', 'allowtransparency', 'true', 'allow', 'encrypted-media'],
+				};
+			} else if (tagName === 'youtube') {
+				// <iframe width="320" height="180" src="https://www.youtube.com/embed/dQw4w9WgXcQ" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+
+				const src = getAttrib('src') || '';
+				// Google's ToS requires a minimum of 200x200
+				let width = '320';
+				let height = '200';
+				if (window.innerWidth >= 400) {
+					width = '400';
+					height = '225';
+				}
+				const videoId = /(?:\?v=|\/embed\/)([A-Za-z0-9_\-]+)/.exec(src)?.[1];
+				if (!videoId) return {tagName: 'img', attribs: ['alt', `invalid src for <youtube>`]};
+
+				return {
+					tagName: 'iframe',
+					attribs: ['width', width, 'height', height, 'src', `https://www.youtube.com/embed/${videoId}`, 'frameborder', '0', 'allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture', 'allowfullscreen', 'allowfullscreen'],
+				};
 			} else if (tagName === 'psicon') {
 				// <psicon> is a custom element which supports a set of mutually incompatible attributes:
 				// <psicon pokemon> and <psicon item>
-				let classValueIndex = -1;
-				let styleValueIndex = -1;
-				let iconAttrib = null;
+				let iconType = null;
+				let iconValue = null;
 				for (let i = 0; i < attribs.length - 1; i += 2) {
-					if (attribs[i] === 'pokemon' || attribs[i] === 'item') {
-						// If declared more than once, use the later.
-						iconAttrib = attribs.slice(i, i + 2);
-					} else if (attribs[i] === 'class') {
-						classValueIndex = i + 1;
-					} else if (attribs[i] === 'style') {
-						styleValueIndex = i + 1;
+					if (attribs[i] === 'pokemon' || attribs[i] === 'item' || attribs[i] === 'type' || attribs[i] === 'category') {
+						[iconType, iconValue] = attribs.slice(i, i + 2);
+						break;
 					}
 				}
 				tagName = 'span';
 
-				if (iconAttrib) {
-					if (classValueIndex < 0) {
-						attribs.push('class', '');
-						classValueIndex = attribs.length - 1;
-					}
-					if (styleValueIndex < 0) {
-						attribs.push('style', '');
-						styleValueIndex = attribs.length - 1;
-					}
+				if (iconType) {
+					const className = getAttrib('class');
+					const style = getAttrib('style');
 
-					// Prepend all the classes and styles associated to the custom element.
-					if (iconAttrib[0] === 'pokemon') {
-						attribs[classValueIndex] = attribs[classValueIndex] ? 'picon ' + attribs[classValueIndex] : 'picon';
-						attribs[styleValueIndex] = attribs[styleValueIndex] ?
-							Dex.getPokemonIcon(iconAttrib[1]) + '; ' + attribs[styleValueIndex] :
-							Dex.getPokemonIcon(iconAttrib[1]);
-					} else if (iconAttrib[0] === 'item') {
-						attribs[classValueIndex] = attribs[classValueIndex] ? 'itemicon ' + attribs[classValueIndex] : 'itemicon';
-						attribs[styleValueIndex] = attribs[styleValueIndex] ?
-							Dex.getItemIcon(iconAttrib[1]) + '; ' + attribs[styleValueIndex] :
-							Dex.getItemIcon(iconAttrib[1]);
+					if (iconType === 'pokemon') {
+						setAttrib('class', 'picon' + (className ? ' ' + className : ''));
+						setAttrib('style', Dex.getPokemonIcon(iconValue) + (style ? '; ' + style : ''));
+					} else if (iconType === 'item') {
+						setAttrib('class', 'itemicon' + (className ? ' ' + className : ''));
+						setAttrib('style', Dex.getItemIcon(iconValue) + (style ? '; ' + style : ''));
+					} else if (iconType === 'type') {
+						tagName = Dex.getTypeIcon(iconValue).slice(1, -3);
+					} else if (iconType === 'category') {
+						tagName = Dex.getCategoryIcon(iconValue).slice(1, -3);
 					}
 				}
 			}
 
-			if (attribs[targetIdx] === 'replace') {
-				targetIdx = -targetIdx;
-			}
 			attribs = html.sanitizeAttribs(tagName, attribs, (urlData: any) => {
 				if (urlData.scheme_ === 'geo' || urlData.scheme_ === 'sms' || urlData.scheme_ === 'tel') return null;
 				return urlData;
 			});
-			if (targetIdx < 0) {
-				targetIdx = -targetIdx;
-				attribs[targetIdx - 1] = 'data-target';
-				attribs[targetIdx] = 'replace';
-				targetIdx = 0;
-			}
 
 			if (dataUri && tagName === 'img') {
-				attribs[srcIdx + 1] = dataUri;
+				setAttrib('src', dataUri);
 			}
 			if (tagName === 'a' || tagName === 'form') {
-				if (targetIdx) {
-					attribs[targetIdx] = '_blank';
+				if (targetReplace) {
+					setAttrib('data-target', 'replace');
+					deleteAttrib('target');
 				} else {
-					attribs.push('target');
-					attribs.push('_blank');
+					setAttrib('target', '_blank');
 				}
 				if (tagName === 'a') {
-					attribs.push('rel');
-					attribs.push('noopener');
+					setAttrib('rel', 'noopener');
 				}
 			}
 			return {tagName, attribs};
@@ -818,8 +908,19 @@ class BattleLog {
 	}
 	static sanitizeHTML(input: string) {
 		if (typeof input !== 'string') return '';
+
 		this.initSanitizeHTML();
+
+		input = input.replace(/<username([^>]*)>([^<]*)<\/username>/gi, (match, attrs, username) => {
+			if (/\bname\s*=\s*"/.test(attrs)) return match;
+			const escapedUsername = username.replace(/"/g, '&quot;').replace(/>/g, '&gt;');
+			return `<username${attrs} name="${escapedUsername}">${username}</username>`;
+		});
+
+		// Our custom element support happens in `tagPolicy`, which is set
+		// up in `initSanitizeHTML` above.
 		const sanitized = html.sanitizeWithPolicy(input, this.tagPolicy) as string;
+
 		// <time> parsing requires ISO 8601 time. While more time formats are
 		// supported by most JavaScript implementations, it isn't required, and
 		// how to exactly enforce ignoring user agent timezone setting is not obvious.
@@ -886,20 +987,20 @@ class BattleLog {
 		let buf = '<!DOCTYPE html>\n';
 		buf += '<meta charset="utf-8" />\n';
 		buf += '<!-- version 1 -->\n';
-		buf += '<title>' + BattleLog.escapeHTML(battle.tier) + ' replay: ' + BattleLog.escapeHTML(battle.p1.name) + ' vs. ' + BattleLog.escapeHTML(battle.p2.name) + '</title>\n';
+		buf += `<title>${BattleLog.escapeHTML(battle.tier)} replay: ${BattleLog.escapeHTML(battle.p1.name)} vs. ${BattleLog.escapeHTML(battle.p2.name)}</title>\n`;
 		buf += '<style>\n';
 		buf += 'html,body {font-family:Verdana, sans-serif;font-size:10pt;margin:0;padding:0;}body{padding:12px 0;} .battle-log {font-family:Verdana, sans-serif;font-size:10pt;} .battle-log-inline {border:1px solid #AAAAAA;background:#EEF2F5;color:black;max-width:640px;margin:0 auto 80px;padding-bottom:5px;} .battle-log .inner {padding:4px 8px 0px 8px;} .battle-log .inner-preempt {padding:0 8px 4px 8px;} .battle-log .inner-after {margin-top:0.5em;} .battle-log h2 {margin:0.5em -8px;padding:4px 8px;border:1px solid #AAAAAA;background:#E0E7EA;border-left:0;border-right:0;font-family:Verdana, sans-serif;font-size:13pt;} .battle-log .chat {vertical-align:middle;padding:3px 0 3px 0;font-size:8pt;} .battle-log .chat strong {color:#40576A;} .battle-log .chat em {padding:1px 4px 1px 3px;color:#000000;font-style:normal;} .chat.mine {background:rgba(0,0,0,0.05);margin-left:-8px;margin-right:-8px;padding-left:8px;padding-right:8px;} .spoiler {color:#BBBBBB;background:#BBBBBB;padding:0px 3px;} .spoiler:hover, .spoiler:active, .spoiler-shown {color:#000000;background:#E2E2E2;padding:0px 3px;} .spoiler a {color:#BBBBBB;} .spoiler:hover a, .spoiler:active a, .spoiler-shown a {color:#2288CC;} .chat code, .chat .spoiler:hover code, .chat .spoiler:active code, .chat .spoiler-shown code {border:1px solid #C0C0C0;background:#EEEEEE;color:black;padding:0 2px;} .chat .spoiler code {border:1px solid #CCCCCC;background:#CCCCCC;color:#CCCCCC;} .battle-log .rated {padding:3px 4px;} .battle-log .rated strong {color:white;background:#89A;padding:1px 4px;border-radius:4px;} .spacer {margin-top:0.5em;} .message-announce {background:#6688AA;color:white;padding:1px 4px 2px;} .message-announce a, .broadcast-green a, .broadcast-blue a, .broadcast-red a {color:#DDEEFF;} .broadcast-green {background-color:#559955;color:white;padding:2px 4px;} .broadcast-blue {background-color:#6688AA;color:white;padding:2px 4px;} .infobox {border:1px solid #6688AA;padding:2px 4px;} .infobox-limited {max-height:200px;overflow:auto;overflow-x:hidden;} .broadcast-red {background-color:#AA5544;color:white;padding:2px 4px;} .message-learn-canlearn {font-weight:bold;color:#228822;text-decoration:underline;} .message-learn-cannotlearn {font-weight:bold;color:#CC2222;text-decoration:underline;} .message-effect-weak {font-weight:bold;color:#CC2222;} .message-effect-resist {font-weight:bold;color:#6688AA;} .message-effect-immune {font-weight:bold;color:#666666;} .message-learn-list {margin-top:0;margin-bottom:0;} .message-throttle-notice, .message-error {color:#992222;} .message-overflow, .chat small.message-overflow {font-size:0pt;} .message-overflow::before {font-size:9pt;content:\'...\';} .subtle {color:#3A4A66;}\n';
 		buf += '</style>\n';
 		buf += '<div class="wrapper replay-wrapper" style="max-width:1180px;margin:0 auto">\n';
 		buf += '<input type="hidden" name="replayid" value="' + replayid + '" />\n';
 		buf += '<div class="battle"></div><div class="battle-log"></div><div class="replay-controls"></div><div class="replay-controls-2"></div>\n';
-		buf += '<h1 style="font-weight:normal;text-align:center"><strong>' + BattleLog.escapeHTML(battle.tier) + '</strong><br /><a href="http://pokemonshowdown.com/users/' + toID(battle.p1.name) + '" class="subtle" target="_blank">' + BattleLog.escapeHTML(battle.p1.name) + '</a> vs. <a href="http://pokemonshowdown.com/users/' + toID(battle.p2.name) + '" class="subtle" target="_blank">' + BattleLog.escapeHTML(battle.p2.name) + '</a></h1>\n';
+		buf += `<h1 style="font-weight:normal;text-align:center"><strong>${BattleLog.escapeHTML(battle.tier)}</strong><br /><a href="http://${Config.routes.users}/${toID(battle.p1.name)}" class="subtle" target="_blank">${BattleLog.escapeHTML(battle.p1.name)}</a> vs. <a href="http://${Config.routes.users}/${toID(battle.p2.name)}" class="subtle" target="_blank">${BattleLog.escapeHTML(battle.p2.name)}</a></h1>\n`;
 		buf += '<script type="text/plain" class="battle-log-data">' + battle.activityQueue.join('\n').replace(/\//g, '\\/') + '</script>\n'; // lgtm [js/incomplete-sanitization]
 		buf += '</div>\n';
 		buf += '<div class="battle-log battle-log-inline"><div class="inner">' + battle.scene.log.elem.innerHTML + '</div></div>\n';
 		buf += '</div>\n';
 		buf += '<script>\n';
-		buf += 'let daily = Math.floor(Date.now()/1000/60/60/24);document.write(\'<script src="https://play.pokemonshowdown.com/js/replay-embed.js?version\'+daily+\'"></\'+\'script>\');\n';
+		buf += `let daily = Math.floor(Date.now()/1000/60/60/24);document.write('<script src="https://${Config.routes.client}/js/replay-embed.js?version'+daily+'"></'+'script>');\n`;
 		buf += '</script>\n';
 		return buf;
 	}
