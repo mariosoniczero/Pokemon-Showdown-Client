@@ -2554,7 +2554,7 @@
 			var set = this.curSet;
 			var isLetsGo = this.curTeam.format.includes('letsgo');
 			var isNatDex = this.curTeam.gen === 8 && this.curTeam.format.includes('nationaldex');
-      var isCustomMega = this.curTeam.gen === 8 && this.curTeam.format.includes('custommega');
+            var isCustomMega = this.curTeam.gen === 8 && this.curTeam.format.includes('custommega');
 			var species = this.curTeam.dex.species.get(set.species);
 			if (!set) return;
 			buf += '<div class="resultheader"><h3>Details</h3></div>';
@@ -2581,7 +2581,7 @@
 				if (isLetsGo) {
 					buf += '<div class="formrow"><label class="formlabel">Happiness:</label><div><input type="number" name="happiness" value="70" class="textbox inputform numform" /></div></div>';
 				} else {
-					if (this.curTeam.gen < 8 || isNatDex) buf += '<div class="formrow"><label class="formlabel">Happiness:</label><div><input type="number" min="0" max="255" step="1" name="happiness" value="' + (typeof set.happiness === 'number' ? set.happiness : 255) + '" class="textbox inputform numform" /></div></div>';
+					if (this.curTeam.gen < 8 || isNatDex || isCustomMega) buf += '<div class="formrow"><label class="formlabel">Happiness:</label><div><input type="number" min="0" max="255" step="1" name="happiness" value="' + (typeof set.happiness === 'number' ? set.happiness : 255) + '" class="textbox inputform numform" /></div></div>';
 				}
 
 				buf += '<div class="formrow"><label class="formlabel">Shiny:</label><div>';
@@ -2640,6 +2640,7 @@
 			var species = this.curTeam.dex.species.get(set.species);
 			var isLetsGo = this.curTeam.format.includes('letsgo');
 			var isNatDex = this.curTeam.format.includes('nationaldex');
+            var isCustomMega = this.curTeam.format.includes('custommega');
 
 			// level
 			var level = parseInt(this.$chart.find('input[name=level]').val(), 10);
@@ -2707,10 +2708,10 @@
 				if (isLetsGo) {
 					buf += '<span class="detailcell"><label>Happiness</label>70</span>';
 				} else {
-					if (this.curTeam.gen < 8 || isNatDex) buf += '<span class="detailcell"><label>Happiness</label>' + (typeof set.happiness === 'number' ? set.happiness : 255) + '</span>';
+					if (this.curTeam.gen < 8 || isNatDex || isCustomMega) buf += '<span class="detailcell"><label>Happiness</label>' + (typeof set.happiness === 'number' ? set.happiness : 255) + '</span>';
 				}
 				buf += '<span class="detailcell"><label>Shiny</label>' + (set.shiny ? 'Yes' : 'No') + '</span>';
-				if (!isLetsGo && (this.curTeam.gen < 8 || isNatDex)) buf += '<span class="detailcell"><label>HP Type</label>' + (set.hpType || 'Dark') + '</span>';
+				if (!isLetsGo && (this.curTeam.gen < 8 || isNatDex || isCustomMega)) buf += '<span class="detailcell"><label>HP Type</label>' + (set.hpType || 'Dark') + '</span>';
 				if (this.curTeam.gen === 8) {
 					if (species.canGigantamax) {
 						buf += '<span class="detailcell"><label>Gmax</label>' + (set.gigantamax ? 'Yes' : 'No') + '</span>';
