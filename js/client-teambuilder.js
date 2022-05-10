@@ -1169,7 +1169,7 @@
 			var isLetsGo = this.curTeam.format.includes('letsgo');
 			var isBDSP = this.curTeam.format.includes('bdsp');
 			var isNatDex = this.curTeam.format.includes('nationaldex');
-            var isCustomMega = this.curTeam.format.includes('custommega');
+			var isCustomMega = this.curTeam.format.includes('custommega');
 			var buf = '<li value="' + i + '">';
 			if (!set.species) {
 				if (this.deletedSet) {
@@ -2591,7 +2591,7 @@
 			var isLetsGo = this.curTeam.format.includes('letsgo');
 			var isBDSP = this.curTeam.format.includes('bdsp');
 			var isNatDex = this.curTeam.gen === 8 && this.curTeam.format.includes('nationaldex');
-            var isCustomMega = this.curTeam.gen === 8 && this.curTeam.format.includes('custommega');
+			var isCustomMega = this.curTeam.gen === 8 && this.curTeam.format.includes('custommega');
 			var species = this.curTeam.dex.species.get(set.species);
 			if (!set) return;
 			buf += '<div class="resultheader"><h3>Details</h3></div>';
@@ -2676,7 +2676,7 @@
 			var isLetsGo = this.curTeam.format.includes('letsgo');
 			var isBDSP = this.curTeam.format.includes('bdsp');
 			var isNatDex = this.curTeam.format.includes('nationaldex');
-            var isCustomMega = this.curTeam.format.includes('custommega');
+			var isCustomMega = this.curTeam.format.includes('custommega');
 
 			// level
 			var level = parseInt(this.$chart.find('input[name=level]').val(), 10);
