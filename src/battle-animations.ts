@@ -11,6 +11,12 @@
  * @license MIT
  */
 
+import type {Battle, Pokemon, Side, WeatherState} from './battle';
+import type {BattleSceneStub} from './battle-scene-stub';
+import {BattleMoveAnims} from './battle-animations-moves';
+import {BattleLog} from './battle-log';
+import {BattleBGM, BattleSound} from './battle-sound';
+
 /*
 
 Most of this file is: CC0 (public domain)
@@ -30,7 +36,7 @@ This license DOES NOT extend to any other files in this repository.
 
 */
 
-class BattleScene {
+export class BattleScene implements BattleSceneStub {
 	battle: Battle;
 	animating = true;
 	acceleration = 1;
@@ -100,7 +106,7 @@ class BattleScene {
 				const pokemon = battle.getPokemon(pokemonId);
 				if (pokemon) return pokemon.speciesForme;
 			}
-			if (!pokemonId.startsWith('p1') && !pokemonId.startsWith('p2')) return '???pokemon:' + pokemonId + '???';
+			if (!pokemonId.startsWith('p')) return '???pokemon:' + pokemonId + '???';
 			if (pokemonId.charAt(3) === ':') return pokemonId.slice(4).trim();
 			else if (pokemonId.charAt(2) === ':') return pokemonId.slice(3).trim();
 			return '???pokemon:' + pokemonId + '???';
@@ -166,23 +172,6 @@ class BattleScene {
 		this.$hiddenMessage = $('<div class="message" style="position:absolute;display:block;visibility:hidden"></div>');
 		this.$tooltips = $('<div class="tooltips"></div>');
 
-		let tooltipBuf = '';
-		const tooltips = {
-			p2c: {top: 70, left: 250, width: 80, height: 100, tooltip: 'activepokemon|1|2'},
-			p2b: {top: 85, left: 320, width: 90, height: 100, tooltip: 'activepokemon|1|1'},
-			p2a: {top: 90, left: 390, width: 100, height: 100, tooltip: 'activepokemon|1|0'},
-			p1a: {top: 200, left: 130, width: 120, height: 160, tooltip: 'activepokemon|0|0'},
-			p1b: {top: 200, left: 250, width: 150, height: 160, tooltip: 'activepokemon|0|1'},
-			p1c: {top: 200, left: 350, width: 150, height: 160, tooltip: 'activepokemon|0|2'},
-		};
-		for (const id in tooltips) {
-			let layout = tooltips[id as 'p1a'];
-			tooltipBuf += `<div class="has-tooltip" style="position:absolute;`;
-			tooltipBuf += `top:${layout.top}px;left:${layout.left}px;width:${layout.width}px;height:${layout.height}px;`;
-			tooltipBuf += `" data-id="${id}" data-tooltip="${layout.tooltip}" data-ownheight="1"></div>`;
-		}
-		this.$tooltips.html(tooltipBuf);
-
 		this.$battle.append(this.$bg);
 		this.$battle.append(this.$terrain);
 		this.$battle.append(this.$weather);
@@ -208,7 +197,9 @@ class BattleScene {
 		this.curTerrain = '';
 		this.curWeather = '';
 
-		this.log.battleParser!.perspective = this.battle.sidesSwitched ? 1 : 0;
+		this.log.battleParser!.perspective = this.battle.mySide.sideid;
+
+		this.resetSides(true);
 	}
 
 	animationOff() {
@@ -244,14 +235,23 @@ class BattleScene {
 	pause() {
 		this.stopAnimation();
 		this.updateBgm();
-		if (this.battle.resumeButton) {
-			this.$frame.append('<div class="playbutton"><button data-action="resume"><i class="fa fa-play icon-play"></i> Resume</button></div>');
-			this.$frame.find('div.playbutton button').click(this.battle.resumeButton);
+		if (this.battle.turn > 0) {
+			this.$frame.append('<div class="playbutton"><button name="play"><i class="fa fa-play icon-play"></i> Resume</button></div>');
+		} else {
+			this.$frame.append('<div class="playbutton"><button name="play"><i class="fa fa-play"></i> Play</button><br /><br /><button name="play-muted" class="startsoundchooser" style="font-size:10pt;display:none">Play (music off)</button></div>');
+			this.$frame.find('div.playbutton button[name=play-muted]').click(() => {
+				this.setMute(true);
+				this.battle.play();
+			});
 		}
+		this.$frame.find('div.playbutton button[name=play]').click(() => this.battle.play());
 	}
 	resume() {
 		this.$frame.find('div.playbutton').remove();
 		this.updateBgm();
+	}
+	setMute(muted: boolean) {
+		BattleSound.setMute(muted);
 	}
 	wait(time: number) {
 		if (!this.animating) return;
@@ -524,7 +524,7 @@ class BattleScene {
 		let animEntry = BattleMoveAnims[moveid];
 		if (this.acceleration >= 3) {
 			const targetsSelf = !participants[1] || participants[0] === participants[1];
-			const isSpecial = !targetsSelf && this.battle.dex.getMove(moveid).category === 'Special';
+			const isSpecial = !targetsSelf && this.battle.dex.moves.get(moveid).category === 'Special';
 			animEntry = BattleOtherAnims[targetsSelf ? 'fastanimself' : isSpecial ? 'fastanimspecial' : 'fastanimattack'];
 		} else if (!animEntry) {
 			animEntry = BattleMoveAnims['tackle'];
@@ -598,7 +598,7 @@ class BattleScene {
 		} else {
 			let statustext = '';
 			if (pokemon.hp !== pokemon.maxhp) {
-				statustext += Pokemon.getHPText(pokemon);
+				statustext += pokemon.getHPText();
 			}
 			if (pokemon.status) {
 				if (statustext) statustext += '|';
@@ -610,9 +610,7 @@ class BattleScene {
 		}
 		return BattleLog.escapeHTML(name);
 	}
-
-	updateSidebar(side: Side) {
-		if (!this.animating) return;
+	getSidebarHTML(side: Side, posStr: string): string {
 		let noShow = this.battle.hardcoreMode && this.battle.gen < 7;
 
 		let speciesOverage = this.battle.speciesClause ? Infinity : Math.max(side.pokemon.length - side.totalPokemon, 0);
@@ -687,17 +685,49 @@ class BattleScene {
 			if (i % 3 === 2) pokemonhtml += `</div><div class="teamicons">`;
 		}
 		pokemonhtml = '<div class="teamicons">' + pokemonhtml + '</div>';
-		const $sidebar = (side.isFar ? this.$rightbar : this.$leftbar);
-		if (side.name) {
-			const ratinghtml = side.rating ? ` title="Rating: ${BattleLog.escapeHTML(side.rating)}"` : ``;
-			$sidebar.html(`<div class="trainer"><strong>${BattleLog.escapeHTML(side.name)}</strong><div class="trainersprite"${ratinghtml} style="background-image:url(${Dex.resolveAvatar(side.avatar)})"></div>${pokemonhtml}</div>`);
-			$sidebar.find('.trainer').css('opacity', 1);
+		const ratinghtml = side.rating ? ` title="Rating: ${BattleLog.escapeHTML(side.rating)}"` : ``;
+		const faded = side.name ? `` : ` style="opacity: 0.4"`;
+		return `<div class="trainer trainer-${posStr}"${faded}><strong>${BattleLog.escapeHTML(side.name)}</strong><div class="trainersprite"${ratinghtml} style="background-image:url(${Dex.resolveAvatar(side.avatar)})"></div>${pokemonhtml}</div>`;
+	}
+	updateSidebar(side: Side) {
+		if (this.battle.gameType === 'freeforall') {
+			this.updateLeftSidebar();
+			this.updateRightSidebar();
+		} else if (side === this.battle.nearSide || side === this.battle.nearSide.ally) {
+			this.updateLeftSidebar();
 		} else {
-			$sidebar.find('.trainer').css('opacity', 0.4);
+			this.updateRightSidebar();
+		}
+	}
+	updateLeftSidebar() {
+		const side = this.battle.nearSide;
+
+		if (side.ally) {
+			const side2 = side.ally!;
+			this.$leftbar.html(this.getSidebarHTML(side, 'near2') + this.getSidebarHTML(side2, 'near'));
+		} else if (this.battle.sides.length > 2) { // FFA
+			const side2 = this.battle.sides[side.n === 0 ? 3 : 2];
+			this.$leftbar.html(this.getSidebarHTML(side2, 'near2') + this.getSidebarHTML(side, 'near'));
+		} else {
+			this.$leftbar.html(this.getSidebarHTML(side, 'near'));
+		}
+	}
+	updateRightSidebar() {
+		const side = this.battle.farSide;
+
+		if (side.ally) {
+			const side2 = side.ally!;
+			this.$rightbar.html(this.getSidebarHTML(side, 'far2') + this.getSidebarHTML(side2, 'far'));
+		} else if (this.battle.sides.length > 2) { // FFA
+			const side2 = this.battle.sides[side.n === 0 ? 3 : 2];
+			this.$rightbar.html(this.getSidebarHTML(side2, 'far2') + this.getSidebarHTML(side, 'far'));
+		} else {
+			this.$rightbar.html(this.getSidebarHTML(side, 'far'));
 		}
 	}
 	updateSidebars() {
-		for (const side of this.battle.sides) this.updateSidebar(side);
+		this.updateLeftSidebar();
+		this.updateRightSidebar();
 	}
 	updateStatbars() {
 		for (const side of this.battle.sides) {
@@ -707,17 +737,63 @@ class BattleScene {
 		}
 	}
 
-	teamPreviewEnd() {
-		for (let siden = 0; siden < 2; siden++) {
-			this.$sprites[siden].empty();
-			this.battle.sides[siden].updateSprites();
+	resetSides(skipEmpty?: boolean) {
+		if (!skipEmpty) {
+			for (const $spritesContainer of this.$sprites) {
+				$spritesContainer.empty();
+			}
 		}
+		for (const side of this.battle.sides) {
+			side.z = (side.isFar ? 200 : 0);
+			side.missedPokemon?.sprite?.destroy();
+
+			side.missedPokemon = {
+				sprite: new PokemonSprite(null, {
+					x: side.leftof(-100),
+					y: side.y,
+					z: side.z,
+					opacity: 0,
+				}, this, side.isFar),
+			} as any;
+
+			side.missedPokemon.sprite.isMissedPokemon = true;
+		}
+		if (this.battle.sides.length > 2 && this.sideConditions.length === 2) {
+			this.sideConditions.push({}, {});
+		}
+		this.rebuildTooltips();
 	}
+	rebuildTooltips() {
+		let tooltipBuf = '';
+		const tooltips = this.battle.gameType === 'freeforall' ? {
+			// FFA battles are visually rendered as triple battle with the center slots empty
+			// so we swap the 2nd and 3rd tooltips on each side
+			p2b: {top: 70, left: 250, width: 80, height: 100, tooltip: 'activepokemon|1|1'},
+			p2a: {top: 90, left: 390, width: 100, height: 100, tooltip: 'activepokemon|1|0'},
+			p1a: {top: 200, left: 130, width: 120, height: 160, tooltip: 'activepokemon|0|0'},
+			p1b: {top: 200, left: 350, width: 150, height: 160, tooltip: 'activepokemon|0|1'},
+		} : {
+			p2c: {top: 70, left: 250, width: 80, height: 100, tooltip: 'activepokemon|1|2'},
+			p2b: {top: 85, left: 320, width: 90, height: 100, tooltip: 'activepokemon|1|1'},
+			p2a: {top: 90, left: 390, width: 100, height: 100, tooltip: 'activepokemon|1|0'},
+			p1a: {top: 200, left: 130, width: 120, height: 160, tooltip: 'activepokemon|0|0'},
+			p1b: {top: 200, left: 250, width: 150, height: 160, tooltip: 'activepokemon|0|1'},
+			p1c: {top: 200, left: 350, width: 150, height: 160, tooltip: 'activepokemon|0|2'},
+		};
+		for (const id in tooltips) {
+			let layout = tooltips[id as 'p1a'];
+			tooltipBuf += `<div class="has-tooltip" style="position:absolute;`;
+			tooltipBuf += `top:${layout.top}px;left:${layout.left}px;width:${layout.width}px;height:${layout.height}px;`;
+			tooltipBuf += `" data-id="${id}" data-tooltip="${layout.tooltip}" data-ownheight="1"></div>`;
+		}
+		this.$tooltips.html(tooltipBuf);
+	}
+
 	teamPreview() {
 		let newBGNum = 0;
-		for (let siden = 0; siden < 2; siden++) {
-			const side = this.battle.sides[siden];
-			const spriteIndex = +this.battle.sidesSwitched ^ siden;
+		for (let siden = 0; siden < 2 || (this.battle.gameType === 'multi' && siden < 4); siden++) {
+			let side = this.battle.sides[siden];
+			const spriteIndex = +this.battle.sidesSwitched ^ (siden % 2);
 			let textBuf = '';
 			let buf = '';
 			let buf2 = '';
@@ -727,6 +803,9 @@ class BattleScene {
 			let lombreCount = 0;
 			for (let i = 0; i < side.pokemon.length; i++) {
 				let pokemon = side.pokemon[i];
+				if (pokemon.speciesForme === 'Xerneas-*') {
+					pokemon.speciesForme = 'Xerneas-Neutral';
+				}
 				if (pokemon.speciesForme === 'Ludicolo') ludicoloCount++;
 				if (pokemon.speciesForme === 'Lombre') lombreCount++;
 
@@ -757,7 +836,9 @@ class BattleScene {
 				if (pokemon.level !== 100) {
 					buf2 += '<span style="text-shadow:#000 1px 1px 0,#000 1px -1px 0,#000 -1px 1px 0,#000 -1px -1px 0"><small>L</small>' + pokemon.level + '</span>';
 				}
-				if (pokemon.item) {
+				if (pokemon.item === '(mail)') {
+					buf2 += ' <img src="' + Dex.resourcePrefix + 'fx/mail.png" width="8" height="10" alt="F" style="margin-bottom:-1px" />';
+				} else if (pokemon.item) {
 					buf2 += ' <img src="' + Dex.resourcePrefix + 'fx/item.png" width="8" height="10" alt="F" style="margin-bottom:-1px" />';
 				}
 				buf2 += '</div>';
@@ -801,7 +882,7 @@ class BattleScene {
 	}
 
 	pseudoWeatherLeft(pWeather: WeatherState) {
-		let buf = '<br />' + Dex.getMove(pWeather[0]).name;
+		let buf = '<br />' + Dex.moves.get(pWeather[0]).name;
 		if (!pWeather[1] && pWeather[2]) {
 			pWeather[1] = pWeather[2];
 			pWeather[2] = 0;
@@ -817,7 +898,7 @@ class BattleScene {
 	}
 	sideConditionLeft(cond: [string, number, number, number], isFoe: boolean, all?: boolean) {
 		if (!cond[2] && !cond[3] && !all) return '';
-		let buf = `<br />${isFoe && !all ? "Foe's " : ""}${Dex.getMove(cond[0]).name}`;
+		let buf = `<br />${isFoe && !all ? "Foe's " : ""}${Dex.moves.get(cond[0]).name}`;
 		if (this.battle.gen < 7 && this.battle.hardcoreMode) return buf;
 
 		if (!cond[2] && !cond[3]) return buf;
@@ -851,6 +932,8 @@ class BattleScene {
 			} else if (this.battle.weatherTimeLeft !== 0) {
 				weatherhtml += ` <small>(${this.battle.weatherTimeLeft} turn${this.battle.weatherTimeLeft === 1 ? '' : 's'})</small>`;
 			}
+			const nullifyWeather = this.battle.abilityActive(['Air Lock', 'Cloud Nine']);
+			weatherhtml = `${nullifyWeather ? '<s>' : ''}${weatherhtml}${nullifyWeather ? '</s>' : ''}`;
 		}
 
 		for (const pseudoWeather of this.battle.pseudoWeather) {
@@ -878,6 +961,9 @@ class BattleScene {
 		if (!this.animating) return;
 		let isIntense = false;
 		let weather = this.battle.weather;
+		if (this.battle.abilityActive(['Air Lock', 'Cloud Nine'])) {
+			weather = '' as ID;
+		}
 		let terrain = '' as ID;
 		for (const pseudoWeatherData of this.battle.pseudoWeather) {
 			let pwid = toID(pseudoWeatherData[0]);
@@ -939,7 +1025,7 @@ class BattleScene {
 		}
 	}
 	resetTurn() {
-		if (!this.battle.turn) {
+		if (this.battle.turn <= 0) {
 			this.$turn.html('');
 			return;
 		}
@@ -949,7 +1035,7 @@ class BattleScene {
 		if (!this.animating) return;
 
 		const turn = this.battle.turn;
-		if (!turn) return;
+		if (turn <= 0) return;
 		const $prevTurn = this.$turn.children();
 		const $newTurn = $('<div class="turn has-tooltip" data-tooltip="field" data-ownheight="1">Turn ' + turn + '</div>');
 		$newTurn.css({
@@ -1338,6 +1424,7 @@ class BattleScene {
 			callback = () => { $hp.addClass('hp-yellow hp-red'); };
 		}
 
+		if (damage === '100%' && pokemon.hp > 0) damage = '99%';
 		this.resultAnim(pokemon, this.battle.hardcoreMode ? 'Damage' : '&minus;' + damage, 'bad');
 
 		$hp.animate({
@@ -1420,25 +1507,12 @@ class BattleScene {
 	afterMove(pokemon: Pokemon) {
 		return pokemon.sprite.afterMove();
 	}
-	updateSpritesForSide(side: Side) {
-		side.missedPokemon?.sprite?.destroy();
-
-		side.missedPokemon = {
-			sprite: new PokemonSprite(null, {
-				x: side.leftof(-100),
-				y: side.y,
-				z: side.z,
-				opacity: 0,
-			}, this, side.isFar),
-		} as any;
-
-		side.missedPokemon.sprite.isMissedPokemon = true;
-	}
 
 	// Misc
 	/////////////////////////////////////////////////////////////////////
 
 	setFrameHTML(html: any) {
+		this.customControls = true;
 		this.$frame.html(html);
 	}
 	setControlsHTML(html: any) {
@@ -1535,19 +1609,21 @@ class BattleScene {
 			this.bgm = BattleSound.loadBgm('audio/sm-rival.mp3', 11389, 62158, this.bgm);
 			break;
 		}
+
+		this.updateBgm();
 	}
 	updateBgm() {
 		/**
-		 * - not playing in non-battle RoomGames (Playback.Uninitialized)
-		 * - not playing at team preview in replays (Playback.Ready)
-		 * - playing at team preview in games (Playback.Playing)
-		 * - playing during the game (Playback.Playing)
+		 * - not playing in non-battle RoomGames before `|start` (turn -1)
+		 * - not playing at team preview in replays (paused)
+		 * - playing at team preview in games (turn 0)
+		 * - playing during the game (turn 1+)
 		 * - not playing while paused
-		 * - playing while waiting for players to choose moves (Playback.Finished)
+		 * - playing while waiting for players to choose moves (atQueueEnd && !ended)
 		 * - not playing after the game has ended
 		 */
-		const nowPlaying = this.battle.playbackState > Playback.Ready && (
-			this.battle.started && !this.battle.ended && !this.battle.paused
+		const nowPlaying = (
+			this.battle.turn >= 0 && !this.battle.ended && !this.battle.paused
 		);
 		if (nowPlaying) {
 			if (!this.bgm) this.rollBgm();
@@ -1576,7 +1652,7 @@ class BattleScene {
 	}
 }
 
-interface ScenePos {
+export interface ScenePos {
 	/** - left, + right */
 	x?: number;
 	/** - down, + up */
@@ -1602,7 +1678,7 @@ interface InitScenePos {
 	display?: string;
 }
 
-class Sprite {
+export class Sprite {
 	scene: BattleScene;
 	$el: JQuery = null!;
 	sp: SpriteData;
@@ -1665,7 +1741,7 @@ class Sprite {
 	}
 }
 
-class PokemonSprite extends Sprite {
+export class PokemonSprite extends Sprite {
 	// HTML strings are constructed from this table and stored back in it to cache them
 	protected static statusTable: {[id: string]: [string, 'good' | 'bad' | 'neutral'] | null | string} = {
 		formechange: null,
@@ -2045,6 +2121,12 @@ class PokemonSprite extends Sprite {
 	recalculatePos(slot: number) {
 		let moreActive = this.scene.activeCount - 1;
 		let statbarOffset = 0;
+		const isFFA = this.scene.battle.gameType === 'freeforall';
+		if (isFFA) {
+			// create a gap between Pokemon on the same "side" as a distinction between FFA and Multi battles
+			moreActive++;
+			if (slot) slot++;
+		}
 		if (this.scene.gen <= 4 && moreActive) {
 			this.x = (slot - 0.52) * (this.isFrontSprite ? 1 : -1) * -55;
 			this.y = (this.isFrontSprite ? 1 : -1) + 1;
@@ -2066,7 +2148,7 @@ class PokemonSprite extends Sprite {
 				this.x = (slot * -70 + 20) * (this.isFrontSprite ? 1 : -1);
 				break;
 			}
-			this.y = (slot * 10) * (this.isFrontSprite ? 1 : -1);
+			this.y = this.isFrontSprite ? slot * 7 : slot * -10;
 			if (this.isFrontSprite) statbarOffset = 17 * slot;
 			if (this.isFrontSprite && !moreActive && this.sp.pixelated) statbarOffset = 15;
 			if (!this.isFrontSprite) statbarOffset = -7 * slot;
@@ -2094,6 +2176,7 @@ class PokemonSprite extends Sprite {
 		this.top = pos.top;
 		this.statbarLeft = pos.left - 80;
 		this.statbarTop = pos.top - 73 - statbarOffset;
+		if (this.statbarTop < -4) this.statbarTop = -4;
 
 		if (moreActive) {
 			// make sure element is in the right z-order
@@ -2433,8 +2516,8 @@ class PokemonSprite extends Sprite {
 		});
 		this.scene.wait(500);
 
+		this.scene.updateSidebar(pokemon.side);
 		if (isPermanent) {
-			this.scene.updateSidebar(pokemon.side);
 			this.resetStatbar(pokemon);
 		} else {
 			this.updateStatbar(pokemon);
@@ -2569,11 +2652,11 @@ class PokemonSprite extends Sprite {
 	resetStatbar(pokemon: Pokemon, startHidden?: boolean) {
 		if (this.$statbar) {
 			this.$statbar.remove();
-			this.$statbar = null;
+			this.$statbar = null as any; // workaround for TS thinking $statbar is still null after `updateStatbar`
 		}
 		this.updateStatbar(pokemon, true);
 		if (!startHidden && this.$statbar) {
-			this.$statbar!.css({
+			this.$statbar.css({
 				display: 'block',
 				left: this.statbarLeft,
 				top: this.statbarTop,
@@ -2635,10 +2718,9 @@ class PokemonSprite extends Sprite {
 			status += '<span class="frz">FRZ</span> ';
 		}
 		if (pokemon.volatiles.typechange && pokemon.volatiles.typechange[1]) {
-			let types = pokemon.volatiles.typechange[1].split('/');
-			status += '<img src="' + Dex.resourcePrefix + 'sprites/types/' + encodeURIComponent(types[0]) + '.png" alt="' + types[0] + '" class="pixelated" /> ';
-			if (types[1]) {
-				status += '<img src="' + Dex.resourcePrefix + 'sprites/types/' + encodeURIComponent(types[1]) + '.png" alt="' + types[1] + '" class="pixelated" /> ';
+			const types = pokemon.volatiles.typechange[1].split('/');
+			for (const type of types) {
+				status += '<img src="' + Dex.resourcePrefix + 'sprites/types/' + encodeURIComponent(type) + '.png" alt="' + type + '" class="pixelated" /> ';
 			}
 		}
 		if (pokemon.volatiles.typeadd) {
@@ -2722,7 +2804,7 @@ interface AnimData {
 	prepareAnim?(scene: BattleScene, args: PokemonSprite[]): void;
 	residualAnim?(scene: BattleScene, args: PokemonSprite[]): void;
 }
-type AnimTable = {[k: string]: AnimData};
+export type AnimTable = {[k: string]: AnimData};
 
 const BattleEffects: {[k: string]: SpriteData} = {
 	wisp: {
@@ -3039,7 +3121,7 @@ const BattleBackdrops = [
 	'bg-skypillar.jpg',
 ];
 
-const BattleOtherAnims: AnimTable = {
+export const BattleOtherAnims: AnimTable = {
 	hitmark: {
 		anim(scene, [attacker]) {
 			scene.showEffect('hitmark', {
@@ -5625,7 +5707,7 @@ const BattleOtherAnims: AnimTable = {
 		},
 	},
 };
-const BattleStatusAnims: AnimTable = {
+export const BattleStatusAnims: AnimTable = {
 	brn: {
 		anim(scene, [attacker]) {
 			scene.showEffect('fireball', {
