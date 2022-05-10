@@ -1065,6 +1065,7 @@ export class Battle {
 	tier = '';
 	gameType: 'singles' | 'doubles' | 'triples' | 'multi' | 'freeforall' = 'singles';
 	rated: string | boolean = false;
+	rules: {[ruleName: string]: 1 | 0} = {};
 	isBlitz = false;
 	endLastTurnPending = false;
 	totalTimeLeft = 0;
@@ -1409,33 +1410,41 @@ export class Battle {
 		this.scene.updateStatbar(pokemon);
 		if (fromeffect.id === 'sleeptalk') {
 			pokemon.rememberMove(move.name, 0);
-		} else if (!fromeffect.id || fromeffect.id === 'pursuit') {
+		}
+		let callerMoveForPressure = null;
+		// will not include effects that are conditions named after moves like Magic Coat and Snatch, which is good
+		if (fromeffect.id && kwArgs.from.startsWith("move:")) {
+			callerMoveForPressure = fromeffect as Move;
+		}
+		if (!fromeffect.id || callerMoveForPressure || fromeffect.id === 'pursuit') {
 			let moveName = move.name;
-			if (move.isZ) {
-				pokemon.item = move.isZ;
-				let item = Dex.items.get(move.isZ);
-				if (item.zMoveFrom) moveName = item.zMoveFrom;
-			} else if (move.name.slice(0, 2) === 'Z-') {
-				moveName = moveName.slice(2);
-				move = Dex.moves.get(moveName);
-				if (window.BattleItems) {
-					for (let item in BattleItems) {
-						if (BattleItems[item].zMoveType === move.type) pokemon.item = item;
+			if (!callerMoveForPressure) {
+				if (move.isZ) {
+					pokemon.item = move.isZ;
+					let item = Dex.items.get(move.isZ);
+					if (item.zMoveFrom) moveName = item.zMoveFrom;
+				} else if (move.name.slice(0, 2) === 'Z-') {
+					moveName = moveName.slice(2);
+					move = Dex.moves.get(moveName);
+					if (window.BattleItems) {
+						for (let item in BattleItems) {
+							if (BattleItems[item].zMoveType === move.type) pokemon.item = item;
+						}
 					}
 				}
 			}
 			let pp = 1;
-			// Sticky Web is never affected by pressure
 			if (this.abilityActive(['Pressure']) && move.id !== 'stickyweb') {
 				const foeTargets = [];
+				const moveTarget = move.pressureTarget;
 
 				if (
 					!target && this.gameType === 'singles' &&
-					!['self', 'allies', 'allySide', 'adjacentAlly', 'adjacentAllyOrSelf'].includes(move.target)
+					!['self', 'allies', 'allySide', 'adjacentAlly', 'adjacentAllyOrSelf', 'allyTeam'].includes(moveTarget)
 				) {
 					// Hardcode for moves without a target in singles
 					foeTargets.push(pokemon.side.foe.active[0]);
-				} else if (['all', 'allAdjacent', 'allAdjacentFoes', 'foeSide'].includes(move.target)) {
+				} else if (['all', 'allAdjacent', 'allAdjacentFoes', 'foeSide'].includes(moveTarget)) {
 					// We loop through all sides here for FFA
 					for (const side of this.sides) {
 						if (side === pokemon.side || side === pokemon.side.ally) continue;
@@ -1453,7 +1462,11 @@ export class Battle {
 					}
 				}
 			}
-			pokemon.rememberMove(moveName, pp);
+			if (!callerMoveForPressure) {
+				pokemon.rememberMove(moveName, pp);
+			} else {
+				pokemon.rememberMove(callerMoveForPressure.name, pp - 1); // 1 pp was already deducted from using the move itself
+			}
 		}
 		pokemon.lastMove = move.id;
 		this.lastMove = move.id;
@@ -2192,10 +2205,12 @@ export class Battle {
 			let poke = this.getPokemon(args[1])!;
 			let item = Dex.items.get(args[2]);
 			let effect = Dex.getEffect(kwArgs.from);
-			poke.item = '';
-			poke.itemEffect = '';
-			poke.prevItem = item.name;
-			poke.prevItemEffect = '';
+			if (this.gen > 4 || effect.id !== 'knockoff') {
+				poke.item = '';
+				poke.itemEffect = '';
+				poke.prevItem = item.name;
+				poke.prevItemEffect = '';
+			}
 			poke.removeVolatile('airballoon' as ID);
 			poke.addVolatile('itemremoved' as ID);
 			if (kwArgs.eat) {
@@ -2211,7 +2226,11 @@ export class Battle {
 					poke.prevItemEffect = 'flung';
 					break;
 				case 'knockoff':
-					poke.prevItemEffect = 'knocked off';
+					if (this.gen <= 4) {
+						poke.itemEffect = 'knocked off';
+					} else {
+						poke.prevItemEffect = 'knocked off';
+					}
 					this.scene.runOtherAnim('itemoff' as ID, [poke]);
 					this.scene.resultAnim(poke, 'Item knocked off', 'neutral');
 					break;
@@ -2354,7 +2373,8 @@ export class Battle {
 			const pokemon = tpoke;
 			const shiny = tpoke.shiny;
 			const gender = tpoke.gender;
-			poke.addVolatile('transform' as ID, pokemon, shiny, gender);
+			const level = tpoke.level;
+			poke.addVolatile('transform' as ID, pokemon, shiny, gender, level);
 			poke.addVolatile('formechange' as ID, speciesForme);
 			for (const trackedMove of tpoke.moveTrack) {
 				poke.rememberMove(trackedMove[0], 0);
@@ -2368,10 +2388,12 @@ export class Battle {
 			let poke = this.getPokemon(args[1])!;
 			let species = Dex.species.get(args[2]);
 			let fromeffect = Dex.getEffect(kwArgs.from);
-			let isCustomAnim = false;
-			poke.removeVolatile('typeadd' as ID);
-			poke.removeVolatile('typechange' as ID);
-			if (this.gen >= 7) poke.removeVolatile('autotomize' as ID);
+			let isCustomAnim = species.name.startsWith('Wishiwashi');
+			if (!poke.getSpeciesForme().endsWith('-Gmax') && !species.name.endsWith('-Gmax')) {
+				poke.removeVolatile('typeadd' as ID);
+				poke.removeVolatile('typechange' as ID);
+				if (this.gen >= 6) poke.removeVolatile('autotomize' as ID);
+			}
 
 			if (!kwArgs.silent) {
 				this.activateAbility(poke, fromeffect);
@@ -2423,7 +2445,7 @@ export class Battle {
 				this.scene.typeAnim(poke, type);
 				break;
 			case 'dynamax':
-				poke.addVolatile('dynamax' as ID);
+				poke.addVolatile('dynamax' as ID, !!args[3]);
 				this.scene.animTransform(poke, true);
 				break;
 			case 'powertrick':
@@ -2540,6 +2562,10 @@ export class Battle {
 				}
 				break;
 
+			// Gen 1-2
+			case 'mist':
+				this.scene.resultAnim(poke, 'Mist', 'good');
+				break;
 			// Gen 1
 			case 'lightscreen':
 				this.scene.resultAnim(poke, 'Light Screen', 'good');
@@ -3208,6 +3234,9 @@ export class Battle {
 				this.messageFadeTime = 40;
 				this.isBlitz = true;
 			}
+			if (this.tier.includes(`Let's Go`)) {
+				this.dex = Dex.mod('gen7letsgo' as ID);
+			}
 			this.log(args);
 			break;
 		}
@@ -3261,6 +3290,7 @@ export class Battle {
 				this.messageFadeTime = 40;
 				this.isBlitz = true;
 			}
+			this.rules[ruleName] = 1;
 			this.log(args);
 			break;
 		}
