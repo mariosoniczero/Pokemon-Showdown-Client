@@ -5,7 +5,9 @@
         "target": "esnext",
         "module": "None",
         "jsx": "preserve",
-        "strict": true
+        "strict": true,
+		"typeRoots": ["./node_modules/@types"],
+		"skipLibCheck": true
     },
     "types": [],
     "include": [
