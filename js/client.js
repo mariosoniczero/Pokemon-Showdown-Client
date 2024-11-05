@@ -393,6 +393,8 @@ function toId() {
 		},
 		focused: true,
 		initialize: function () {
+			// Gotta cache this since backbone removes it
+			this.query = window.location.search;
 			window.app = this;
 			this.initializeRooms();
 			this.initializePopups();
@@ -678,6 +680,11 @@ function toId() {
 
 			Storage.whenAppLoaded.load(this);
 
+			// load custom colors from loginserver
+			$.get('/config/colors.json', {}, function (data) {
+				Object.assign(Config.customcolors, data);
+			});
+
 			this.initializeConnection();
 		},
 		/**
@@ -748,11 +755,15 @@ function toId() {
 						// anyway, this affects SockJS because it makes HTTP requests to localhost
 						// but it turns out that making direct WebSocket connections to localhost is
 						// still supported, so we'll just bypass SockJS and use WebSocket directly.
+						var possiblePort = new URL(document.location + self.query).searchParams.get('port');
+						// We need to bypass the port as well because on most modern browsers, http gets forced
+						// to https, which means a ws connection is made to port 443 instead of wherever it's actually running,
+						// thus ensuring a failed connection.
+						var port = possiblePort || Config.server.port;
 						console.log("Bypassing SockJS for localhost");
-						console.log('ws' + protocol.slice('4') + '://' + Config.server.host + ':' + Config.server.port + Config.sockjsprefix + '/websocket');
-						return new WebSocket(
-							'ws' + protocol.slice('4') + '://' + Config.server.host + ':' + Config.server.port + Config.sockjsprefix + '/websocket'
-						);
+						var url = 'ws://' + Config.server.host + ':' + port + Config.sockjsprefix + '/websocket';
+						console.log(url);
+						return new WebSocket(url);
 					}
 					return new SockJS(
 						protocol + '://' + Config.server.host + ':' + Config.server.port + Config.sockjsprefix,
@@ -903,8 +914,8 @@ function toId() {
 		 */
 		sendTeam: function (team) {
 			var packedTeam = '' + Storage.getPackedTeam(team);
-			if (packedTeam.length > 100 * 1024 - 6) {
-				alert("Your team is over 100 KB, usually caused by having over 600 Pokemon in it. Please use a smaller team.");
+			if (packedTeam.length > 25 * 1024 - 6) {
+				alert("Your team is over 25 KB. Please use a smaller team.");
 				return;
 			}
 			this.send('/utm ' + packedTeam);
@@ -2619,9 +2630,10 @@ function toId() {
 		update: function (data) {
 			if (data && data.userid === this.data.userid) {
 				data = _.extend(this.data, data);
-				// Don't cache the roomGroup
+				// Don't cache the roomGroup or status
 				UserPopup.dataCache[data.userid] = _.clone(data);
 				delete UserPopup.dataCache[data.userid].roomGroup;
+				delete UserPopup.dataCache[data.userid].status;
 			} else {
 				data = this.data;
 			}
@@ -2752,7 +2764,11 @@ function toId() {
 			this.close();
 		},
 		userOptions: function () {
-			app.addPopup(UserOptionsPopup, {name: this.data.name, userid: this.data.userid});
+			app.addPopup(UserOptionsPopup, {
+				name: this.data.name,
+				userid: this.data.userid,
+				friended: this.data.friended,
+			});
 		}
 	}, {
 		dataCache: {}
@@ -2762,10 +2778,31 @@ function toId() {
 		initialize: function (data) {
 			this.name = data.name;
 			this.userid = data.userid;
+			this.data = data;
 			this.update();
 		},
 		update: function () {
-			this.$el.html('<p><button name="toggleIgnoreUser">' + (app.ignore[this.userid] ? 'Unignore' : 'Ignore') + '</button></p><p><button name="report">Report</button></p>');
+			var ignored = app.ignore[this.userid] ? 'Unignore' : 'Ignore';
+			var friended = this.data.friended ? 'Remove friend' : 'Add friend';
+			this.$el.html(
+				'<p><button name="toggleIgnoreUser">' + ignored + '</button></p>' +
+				'<p><button name="report">Report</button></p>' +
+				'<p><button name="toggleFriend">' + friended +
+				'</button></p>'
+			);
+		},
+		toggleFriend: function () {
+			var $button = this.$el.find('[name=toggleFriend]');
+			if (this.data.friended) {
+				app.send('/unfriend ' + this.userid);
+				$button.text('Friend removed.');
+			} else {
+				app.send('/friend add ' + this.userid);
+				$button.text('Friend request sent!');
+			}
+			// we intentionally disable since we don't want them to spam it
+			// you at least have to close and reopen the popup to get it back
+			$button.addClass('button disabled');
 		},
 		report: function () {
 			app.joinRoom('view-help-request-report-user-' + this.userid);
