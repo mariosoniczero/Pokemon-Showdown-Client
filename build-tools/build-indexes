@@ -8,8 +8,8 @@ const child_process = require("child_process");
 const rootDir = path.resolve(__dirname, '..');
 process.chdir(rootDir);
 
-if (!fs.existsSync('caches/pokemon-showdown')) {
-	child_process.execSync('git clone https://github.com/mariosoniczero/Pokemon-Showdown.git', {
+if (!fs.existsSync('caches/Pokemon-Showdown')) {
+	child_process.execSync('git clone --single-branch --branch gpl-dev https://github.com/mariosoniczero/Pokemon-Showdown.git', {
 		cwd: 'caches',
 	});
 }
